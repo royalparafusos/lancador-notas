@@ -666,13 +666,47 @@ public class DedClient implements AutoCloseable {
         // Atenção: o cabeçalho da tela de Avaliações também parece um "cartão de turma";
         // por isso confere o ENDEREÇO antes de confiar nos cartões.
         if (naTelaInicial() && marcarCartoes("turma", 1_500) > 0) return;
+        if (paginaAvaliacoes != null) voltarDaAbaNova();
+
+        // 1) botão "início" (casinha) do próprio DED+ — navegação interna, rápida
+        try {
+            Object ok = page.evaluate(JS_BOTAO_INICIO);
+            if (Boolean.TRUE.equals(ok)) {
+                clicarSeguro(page.locator("[data-lnd-inicio]"));
+                if (esperarTelaInicial(8_000)) return;
+            }
+        } catch (PlaywrightException | DedException ignored) {}
+
+        // 2) "voltar" do navegador, algumas vezes (Avaliações → Visão Geral → início)
+        for (int i = 0; i < 4 && !naTelaInicial(); i++) {
+            try { page.goBack(new Page.GoBackOptions().setTimeout(8_000)); } catch (PlaywrightException ignored) {}
+            esperarCarregar();
+        }
+        if (esperarTelaInicial(4_000)) return;
+
+        // 3) último recurso: recarregar o site (pode passar pela tela "Processando… Seg.ID")
+        log.accept("Recarregando o DED+...");
         page.navigate("https://dedmais.educacao.mg.gov.br/",
                 new Page.NavigateOptions().setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED));
-        esperarCarregar();
-        if (marcarCartoes("turma", TIMEOUT_MS) == 0) {
+        if (!esperarTelaInicial(45_000)) {
             throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
-                    "Não encontrei os cartões das turmas no DED+. A sessão pode ter expirado — faça login de novo.");
+                    "Não encontrei os cartões das turmas no DED+. A sessão pode ter expirado — feche e abra o programa.");
         }
+    }
+
+    private boolean esperarTelaInicial(int ms) {
+        long limite = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < limite) {
+            if (naTelaInicial() && marcarCartoes("turma", 0) > 0) return true;
+            page.waitForTimeout(300);
+        }
+        return false;
+    }
+
+    private void voltarDaAbaNova() {
+        try { page.close(); } catch (PlaywrightException ignored) {}
+        page = paginaAvaliacoes;
+        paginaAvaliacoes = null;
     }
 
     private boolean naPaginaAvaliacoes(int ms) {
@@ -771,20 +805,54 @@ public class DedClient implements AutoCloseable {
         return r;
     }
 
+    /** Página da lista de avaliações, guardada quando a avaliação abre numa aba nova. */
+    private Page paginaAvaliacoes;
+
     private void abrirAvaliacao(int indice) {
         marcarCartoes("avaliacao", 8_000);
-        Locator card = page.locator("[data-lnd-avaliacao='" + indice + "']");
-        Locator link = card.locator("a");
-        clicarSeguro(link.count() > 0 ? link.first() : card);
-        esperarCarregar();
-        if (marcarCartoes("aluno", TIMEOUT_MS) == 0) {
-            throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
-                    "A tela de lançar notas abriu sem alunos reconhecíveis. Captura em " + pastaCapturas());
+        @SuppressWarnings("unchecked")
+        List<Object> alvos = (List<Object>) page.evaluate(JS_ALVOS_AVALIACAO, indice);
+        int abasAntes = contexto.pages().size();
+        for (int k = 0; k < alvos.size(); k++) {
+            Locator l = page.locator("[data-lnd-alvo-av='" + k + "']");
+            if (l.count() == 0) continue;
+            try {
+                l.first().click(new Locator.ClickOptions().setTimeout(3_000));
+            } catch (PlaywrightException e) {
+                try { l.first().evaluate("el => el.click()"); } catch (PlaywrightException ignored) {}
+            }
+            if (esperarTelaDeNotas(6_000, abasAntes)) return;
         }
+        throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
+                "Não consegui abrir a tela de lançar notas da avaliação. Captura em " + pastaCapturas());
+    }
+
+    /** Espera a tela de lançar notas — na mesma aba ou numa aba nova (troca para ela). */
+    private boolean esperarTelaDeNotas(int ms, int abasAntes) {
+        long limite = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < limite) {
+            if (contexto.pages().size() > abasAntes) {
+                Page nova = contexto.pages().get(contexto.pages().size() - 1);
+                if (paginaAvaliacoes == null) paginaAvaliacoes = page;
+                page = nova;
+                try { page.waitForLoadState(LoadState.DOMCONTENTLOADED, new Page.WaitForLoadStateOptions().setTimeout(10_000)); }
+                catch (PlaywrightException ignored) {}
+            }
+            if (marcarCartoes("aluno", 0) > 0) return true;
+            page.waitForTimeout(250);
+        }
+        return false;
     }
 
     private void voltarParaAvaliacoes(String divisao) {
-        try { page.goBack(new Page.GoBackOptions().setTimeout(10_000)); } catch (PlaywrightException ignored) {}
+        if (paginaAvaliacoes != null) {
+            try { page.close(); } catch (PlaywrightException ignored) {}
+            page = paginaAvaliacoes;
+            paginaAvaliacoes = null;
+            page.bringToFront();
+        } else {
+            try { page.goBack(new Page.GoBackOptions().setTimeout(10_000)); } catch (PlaywrightException ignored) {}
+        }
         esperarCarregar();
         if (!naPaginaAvaliacoes(8_000)) {
             clicar("avaliacoes.voltar");
@@ -940,6 +1008,7 @@ public class DedClient implements AutoCloseable {
             List<Aluno> alunos = new ArrayList<>();
             for (Map<String, Object> m : lista) alunos.add(new Aluno((String) m.get("matricula"), (String) m.get("nome")));
             // só usa se bater EXATAMENTE com o "Total de alunos" da tela (lista incompleta ou com sobra -> plano B)
+            log.accept("Visão Geral: " + alunos.size() + " aluno(s) lidos" + (total != null ? " de " + total : "") + ".");
             if (alunos.isEmpty() || (total != null && total.intValue() > 0 && alunos.size() != total.intValue())) return List.of();
             return alunos;
         } catch (PlaywrightException e) {
@@ -968,6 +1037,13 @@ public class DedClient implements AutoCloseable {
             Files.createDirectories(pastaCapturas());
             String nome = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + "-" + motivo + ".png";
             page.screenshot(new Page.ScreenshotOptions().setPath(pastaCapturas().resolve(nome)).setFullPage(true).setTimeout(5_000));
+        } catch (Exception ignored) {}
+        try {
+            // código da página (sem senhas: campos de senha são esvaziados) — para diagnosticar mudanças no DED+
+            String html = (String) page.evaluate("() => { document.querySelectorAll('input[type=password]').forEach(i => i.value=''); "
+                    + "return document.documentElement.outerHTML; }");
+            String nome = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + "-" + motivo + ".html";
+            Files.writeString(pastaCapturas().resolve(nome), "<!-- " + page.url() + " -->\n" + html);
         } catch (Exception ignored) {}
     }
 
@@ -1201,6 +1277,61 @@ public class DedClient implements AutoCloseable {
             alunos.push({ matricula: mat, nome: link.textContent.trim().replace(/\\s+/g, ' ') });
           }
           return { total: tot ? Number(tot) : null, alunos };
+        }
+        """;
+
+    /**
+     * Pontos de clique para abrir a avaliação nº i (em ordem): o título sublinhado, o link/botão
+     * que o contém, e o próprio cartão. Evita o lápis (editar), "Copiar" e "Excluir".
+     */
+    private static final String JS_ALVOS_AVALIACAO = """
+        (i) => {
+          document.querySelectorAll('[data-lnd-alvo-av]').forEach(e => e.removeAttribute('data-lnd-alvo-av'));
+          const card = document.querySelector('[data-lnd-avaliacao="' + i + '"]');
+          if (!card) return [];
+          const proibido = e => /copiar|excluir|editar|valor total|tipo:|divis/i.test(e.textContent || '');
+          // título: primeiro texto do cartão em maiúsculas
+          let titulo = null;
+          const w = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            const t = n.textContent.trim();
+            if (t.length >= 3 && t === t.toUpperCase() && /[A-ZÀ-Ý]/.test(t) && !/^NOTA REGISTRADA$/i.test(t)) { titulo = n.parentElement; break; }
+          }
+          const alvos = [];
+          const add = e => { if (e && card.contains(e) && !alvos.includes(e)) alvos.push(e); };
+          if (titulo) {
+            add(titulo);
+            add(titulo.closest('a, button, [role=button], [role=link], [routerlink]'));
+            let p = titulo;
+            for (let k = 0; k < 3 && p.parentElement && p.parentElement !== card; k++) {
+              p = p.parentElement;
+              if (getComputedStyle(p).cursor === 'pointer' && !proibido(p)) { add(p); break; }
+            }
+          }
+          [...card.querySelectorAll('a')].filter(a => !proibido(a) && (a.textContent || '').trim().length > 2).forEach(add);
+          add(card);
+          alvos.forEach((e, k) => e.setAttribute('data-lnd-alvo-av', String(k)));
+          return alvos.map(e => e.tagName);
+        }
+        """;
+
+    /** Botão "início" (casinha) no topo do DED+. Marca com data-lnd-inicio; true se achou. */
+    private static final String JS_BOTAO_INICIO = """
+        () => {
+          document.querySelectorAll('[data-lnd-inicio]').forEach(e => e.removeAttribute('data-lnd-inicio'));
+          const cands = [...document.querySelectorAll('a, button, [role=button], mat-icon, i, svg, img')];
+          const ehInicio = e => {
+            const t = ((e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '') + ' ' +
+                       (e.getAttribute('mattooltip') || '') + ' ' + (e.tagName === 'MAT-ICON' || e.tagName === 'I' ? e.textContent : '') + ' ' +
+                       (e.getAttribute('class') || '') + ' ' + (e.getAttribute('src') || '') + ' ' + (e.getAttribute('href') || '')).toLowerCase();
+            return /\\bhome\\b|in[ií]cio|house/.test(t);
+          };
+          const r = e => e.getBoundingClientRect();
+          const alvo = cands.find(e => ehInicio(e) && r(e).width > 0 && r(e).top < 120);
+          if (!alvo) return false;
+          (alvo.closest('a, button, [role=button]') || alvo).setAttribute('data-lnd-inicio', '1');
+          return true;
         }
         """;
 
