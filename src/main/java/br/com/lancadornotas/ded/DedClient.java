@@ -493,13 +493,8 @@ public class DedClient implements AutoCloseable {
                             "Não encontrei a tela de Avaliações desta turma. Captura em " + pastaCapturas());
                 }
             }
-            divisaoAtual = null;
-            Locator s = primeiro("avaliacoes.divisao").first();
-            @SuppressWarnings("unchecked")
-            List<String> opcoes = (List<String>) s.evaluate(
-                    "el => { const o=[...el.options]; const sel=o[el.selectedIndex]; " +
-                    "return [sel, ...o.filter(x=>x!==sel)].filter(Boolean).map(x=>x.text.trim()).filter(x=>x); }");
-            if (!opcoes.isEmpty()) divisaoAtual = opcoes.get(0);
+            List<String> opcoes = lerDivisoes();
+            log.accept("Divisões: " + opcoes);
             return opcoes;
         });
     }
@@ -668,12 +663,72 @@ public class DedClient implements AutoCloseable {
             throw new DedException(DedException.Tipo.OUTRO, "Escolha a turma de novo (o DED+ saiu da tela de avaliações).");
         }
         if (divisao != null && !divisao.equals(divisaoAtual)) {
-            primeiro("avaliacoes.divisao").first().selectOption(new SelectOption().setLabel(divisao));
+            selecionarDivisao(divisao);
             esperarCarregar();
             page.waitForTimeout(800);
             divisaoAtual = divisao;
         }
         marcarCartoes("avaliacao", 8_000);
+    }
+
+    // ------------------------------------------------------------------ divisão (1º/2º/3º trimestre)
+    // O DED+ pode usar uma lista comum (<select>) ou um menu próprio (botão "3º Trimestre ⌄").
+    // Os dois são tratados; no pior caso fica a divisão que o DED+ já está mostrando.
+
+    private static final String RE_DIVISAO = "^\\s*\\d+\\s*[ºª°o]?\\s*(Trimestre|Bimestre|Semestre|Per[ií]odo|Etapa)\\s*$";
+
+    /** Divisões disponíveis; a que está selecionada vem primeiro. */
+    @SuppressWarnings("unchecked")
+    private List<String> lerDivisoes() {
+        divisaoAtual = null;
+        Map<String, Object> r = (Map<String, Object>) page.evaluate(JS_DIVISAO, RE_DIVISAO);
+        String tipo = (String) r.get("tipo");
+        List<String> opcoes = new ArrayList<>((List<String>) r.get("opcoes"));
+        String atual = (String) r.get("atual");
+
+        if ("custom".equals(tipo)) {
+            // abre o menu, lê as opções novas que aparecerem e fecha
+            try {
+                clicarSeguro(page.locator("[data-lnd-divisao='gatilho']"));
+                page.waitForTimeout(700);
+                opcoes = new ArrayList<>((List<String>) page.evaluate(JS_DIVISAO_OPCOES, RE_DIVISAO));
+                page.keyboard().press("Escape");
+                page.waitForTimeout(300);
+            } catch (PlaywrightException e) {
+                log.accept("(não consegui abrir a lista de divisões; usando a atual)");
+            }
+        }
+        if (atual != null) {
+            opcoes.remove(atual);
+            opcoes.add(0, atual);
+            divisaoAtual = atual;
+        }
+        if (opcoes.isEmpty()) {
+            opcoes.add("(divisão atual)");
+            divisaoAtual = "(divisão atual)";
+        }
+        return opcoes;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void selecionarDivisao(String divisao) {
+        if (divisao.startsWith("(")) return;
+        Map<String, Object> r = (Map<String, Object>) page.evaluate(JS_DIVISAO, RE_DIVISAO);
+        if ("select".equals(r.get("tipo"))) {
+            page.locator("[data-lnd-divisao='gatilho']").selectOption(new SelectOption().setLabel(divisao));
+            return;
+        }
+        if ("custom".equals(r.get("tipo"))) {
+            clicarSeguro(page.locator("[data-lnd-divisao='gatilho']"));
+            page.waitForTimeout(700);
+            page.evaluate(JS_DIVISAO_OPCOES, RE_DIVISAO); // marca as opções
+            Locator op = page.locator("[data-lnd-divisao-opcao]").filter(new Locator.FilterOptions().setHasText(divisao));
+            if (op.count() == 0) {
+                page.keyboard().press("Escape");
+                throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO, "Não achei a divisão \"" + divisao + "\" no DED+.");
+            }
+            clicarSeguro(op);
+        }
     }
 
     private List<Avaliacao> lerAvaliacoes() {
@@ -933,6 +988,64 @@ public class DedClient implements AutoCloseable {
           if (alvo.checked || alvo.getAttribute('aria-checked') === 'true') return true;
           alvo.setAttribute('data-lnd-nr', String(i));
           return true;
+        }
+        """;
+
+    /**
+     * Acha o seletor de divisão perto do texto "Seleciona a divisão" (ou o primeiro texto do tipo
+     * "3º Trimestre" que seja clicável). Marca-o com data-lnd-divisao="gatilho".
+     */
+    private static final String JS_DIVISAO = """
+        (re) => {
+          const rx = new RegExp(re, 'i');
+          document.querySelectorAll('[data-lnd-divisao]').forEach(e => e.removeAttribute('data-lnd-divisao'));
+          document.querySelectorAll('[data-lnd-antes]').forEach(e => e.removeAttribute('data-lnd-antes'));
+          // 1) lista comum
+          for (const s of document.querySelectorAll('select')) {
+            const ops = [...s.options].map(o => o.text.trim()).filter(t => rx.test(t));
+            if (ops.length) {
+              s.setAttribute('data-lnd-divisao', 'gatilho');
+              const atual = s.options[s.selectedIndex] ? s.options[s.selectedIndex].text.trim() : null;
+              return { tipo: 'select', atual, opcoes: [...s.options].map(o => o.text.trim()).filter(Boolean) };
+            }
+          }
+          // 2) menu próprio: elemento visível cujo texto é só "3º Trimestre", de preferência perto do rótulo
+          const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const cands = [...document.querySelectorAll('body *')].filter(e => visivel(e) && rx.test(e.innerText || ''));
+          // menor elemento (sem filho que também case)
+          const folhas = cands.filter(e => ![...e.children].some(c => rx.test(c.innerText || '')));
+          folhas.forEach(e => e.setAttribute('data-lnd-antes', '1'));
+          const rot = [...document.querySelectorAll('body *')].find(e => /seleciona a divis/i.test(e.innerText || '') && e.children.length < 6);
+          const clicavel = e => e.closest('button, select, [role=combobox], [role=button], mat-select, .mat-mdc-select, [aria-haspopup], [class*=select], [class*=dropdown]') || e;
+          let alvo = null;
+          if (rot) {
+            const caixa = rot.closest('div, section, form') || rot.parentElement;
+            alvo = folhas.find(e => (caixa && caixa.contains(e)) || (rot.parentElement && rot.parentElement.contains(e)));
+          }
+          if (!alvo) alvo = folhas.find(e => clicavel(e) !== e);
+          if (!alvo) return { tipo: null, atual: folhas.length ? folhas[0].innerText.trim() : null, opcoes: [] };
+          clicavel(alvo).setAttribute('data-lnd-divisao', 'gatilho');
+          return { tipo: 'custom', atual: alvo.innerText.trim(), opcoes: [] };
+        }
+        """;
+
+    /** Depois de abrir o menu: opções novas (que não existiam antes do clique) com texto de divisão. */
+    private static final String JS_DIVISAO_OPCOES = """
+        (re) => {
+          const rx = new RegExp(re, 'i');
+          document.querySelectorAll('[data-lnd-divisao-opcao]').forEach(e => e.removeAttribute('data-lnd-divisao-opcao'));
+          const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const ops = [...document.querySelectorAll('[role=option], mat-option, li, [class*=option], [class*=item], body *')]
+            .filter(e => visivel(e) && rx.test(e.innerText || '') && !e.hasAttribute('data-lnd-antes')
+                         && ![...e.children].some(c => rx.test(c.innerText || '')));
+          const vistos = new Set(); const nomes = [];
+          for (const e of ops) {
+            const t = e.innerText.trim();
+            if (vistos.has(t)) continue;
+            vistos.add(t); nomes.push(t);
+            e.setAttribute('data-lnd-divisao-opcao', t);
+          }
+          return nomes;
         }
         """;
 
