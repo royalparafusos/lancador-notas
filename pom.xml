@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>br.com.lancadornotas</groupId>
+    <artifactId>lancador-notas-ded</artifactId>
+    <version>1.1.0</version>
+    <name>Lançador de Notas DED+ MG</name>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <javafx.version>21.0.5</javafx.version>
+        <playwright.version>1.49.0</playwright.version>
+        <jackson.version>2.18.2</jackson.version>
+        <main.class>br.com.lancadornotas.Launcher</main.class>
+
+        <!--
+          VERSÕES
+          app.versao.base : as atualizações publicadas pelo GitHub viram "1.1.<número da publicação>".
+          app.versao      : versão gravada no programa (o GitHub Actions passa -Dapp.versao=...).
+          libs.versao     : SUBA ESTE NÚMERO quando mudar qualquer dependência abaixo (JavaFX, Playwright,
+                            Jackson). Os programas instalados percebem e avisam que é preciso reinstalar,
+                            porque a atualização automática troca só o programa, não as bibliotecas.
+        -->
+        <app.versao.base>1.1</app.versao.base>
+        <app.versao>${app.versao.base}.0</app.versao>
+        <libs.versao>1</libs.versao>
+    </properties>
+
+    <dependencies>
+        <!-- Interface gráfica -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
+        <!-- Conexão com o navegador (depois que o professor faz login) -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
+        </dependency>
+
+        <!-- JSON (respostas da leitura das fotos e do GitHub) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>lancador-notas-ded</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+
+            <!-- mvn javafx:run -->
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>${main.class}</mainClass>
+                </configuration>
+            </plugin>
+
+            <!--
+              1) O PROGRAMA: target/lancador-notas-ded.jar  (pequeno, só o nosso código)
+                 É este arquivo que a atualização automática troca.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>${main.class}</mainClass>
+                        </manifest>
+                        <manifestEntries>
+                            <Class-Path>lancador-libs.jar</Class-Path>
+                            <Implementation-Title>Lancador de Notas</Implementation-Title>
+                            <Implementation-Version>${app.versao}</Implementation-Version>
+                            <Libs-Versao>${libs.versao}</Libs-Versao>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <!--
+              2) AS BIBLIOTECAS: target/lancador-libs.jar  (grande: JavaFX, Playwright, Jackson)
+                 Vai só no instalador. Muda raramente (ver libs.versao).
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <outputFile>${project.build.directory}/lancador-libs.jar</outputFile>
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>${project.groupId}:${project.artifactId}</exclude>
+                                </excludes>
+                            </artifactSet>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Libs-Versao>${libs.versao}</Libs-Versao>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <!-- o instalador é para Windows: não precisa do motor do Playwright de Mac/Linux -->
+                                <filter>
+                                    <artifact>com.microsoft.playwright:driver-bundle</artifact>
+                                    <excludes>
+                                        <exclude>driver/mac*/**</exclude>
+                                        <exclude>driver/linux*/**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

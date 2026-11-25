@@ -1,0 +1,4 @@
+target/
+*.class
+ferramentas/
+instalador/config-padrao.properties

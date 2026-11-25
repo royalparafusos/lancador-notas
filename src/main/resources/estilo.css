@@ -1,0 +1,12 @@
+.root { -fx-font-size: 14px; }
+.titulo-secao { -fx-font-weight: bold; -fx-font-size: 14px; }
+.botao-principal { -fx-background-color: #1565c0; -fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 16px; }
+.botao-principal:disabled { -fx-opacity: 0.5; }
+
+.table-row-cell.status-conferir { -fx-background-color: #fff4cc; }
+.table-row-cell.status-pronto   { -fx-background-color: #ffffff; }
+.table-row-cell.status-lancado  { -fx-background-color: #dff5e1; }
+.table-row-cell.status-erro     { -fx-background-color: #fde0e0; }
+.table-row-cell.status-ignorar  { -fx-background-color: #eeeeee; -fx-opacity: 0.6; }
+.table-row-cell:selected        { -fx-background-color: #bbdefb; }
+.table-row-cell .text           { -fx-fill: #222; }

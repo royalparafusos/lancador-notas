@@ -1,0 +1,68 @@
+# =====================================================================
+#  Publica uma ATUALIZAÇÃO do Lançador de Notas a cada alteração no código.
+#
+#  Quando algo muda em src/ ou no pom.xml (na branch main), o GitHub:
+#   1. compila e roda os testes (num Windows, igual ao dos professores);
+#   2. cria a versão 1.1.<número desta publicação>;
+#   3. publica uma "Release" com o programa (lancador-notas-ded.jar) e o versao.json.
+#  Os programas instalados encontram a versão nova ao abrir e se atualizam sozinhos.
+#
+#  Também dá para publicar na mão: aba Actions > "Publicar atualização" > Run workflow.
+# =====================================================================
+name: Publicar atualização
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'pom.xml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Definir versão
+        id: v
+        shell: bash
+        run: |
+          BASE=$(sed -n 's:.*<app.versao.base>\(.*\)</app.versao.base>.*:\1:p' pom.xml | head -1)
+          LIBS=$(sed -n 's:.*<libs.versao>\(.*\)</libs.versao>.*:\1:p' pom.xml | head -1)
+          echo "versao=$BASE.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "libs=$LIBS" >> "$GITHUB_OUTPUT"
+          echo "Versão: $BASE.${{ github.run_number }} (bibliotecas: $LIBS)"
+
+      - name: Compilar e testar
+        shell: bash
+        run: mvn -B -q package "-Dapp.versao=${{ steps.v.outputs.versao }}"
+
+      - name: Montar versao.json
+        shell: bash
+        run: |
+          SHA=$(sha256sum target/lancador-notas-ded.jar | cut -d' ' -f1)
+          NOVIDADES=$(git log -1 --pretty=%s | sed 's/\\/\\\\/g; s/"/\\"/g')
+          URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.v.outputs.versao }}/lancador-notas-ded.jar"
+          printf '{"versao":"%s","libsVersao":%s,"sha256":"%s","jar":"%s","novidades":"%s"}\n' \
+            "${{ steps.v.outputs.versao }}" "${{ steps.v.outputs.libs }}" "$SHA" "$URL" "$NOVIDADES" > target/versao.json
+          cat target/versao.json
+
+      - name: Publicar
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.versao }}" \
+            target/lancador-notas-ded.jar target/versao.json \
+            --title "Versão ${{ steps.v.outputs.versao }}" \
+            --notes "$(git log -1 --pretty=%B)" \
+            --latest
