@@ -153,7 +153,7 @@ public final class Config {
 
     /** Pausa entre ações no DED, em milissegundos — evita sobrecarregar o sistema da SEE. */
     public static int pausaEntreAcoesMs() {
-        return Integer.parseInt(props.getProperty("ded.pausaMs", "400"));
+        return Integer.parseInt(props.getProperty("ded.pausaMs", "120"));
     }
 
     public static String ultimoCpf() {

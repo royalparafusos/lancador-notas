@@ -425,7 +425,8 @@ public class MainView {
         File f = fc.showOpenDialog(stage);
         if (f == null) return;
         fotoAtual = f.toPath();
-        preview.setImage(new Image(f.toURI().toString(), true));
+        // carrega já reduzida (foto de celular tem 12+ megapixels e deixaria a tela lenta)
+        preview.setImage(new Image(f.toURI().toString(), 900, 0, true, true, true));
         infoFolha.setText(f.getName());
         btLer.setDisable(false);
     }
@@ -754,6 +755,8 @@ public class MainView {
         btFolha.setDisable(sim);
         btLer.setDisable(sim || fotoAtual == null);
         root.setCursor(sim ? Cursor.WAIT : Cursor.DEFAULT);
+        // barra animada enquanto espera o DED+/leitura: mostra que o programa não travou
+        progresso.setProgress(sim ? ProgressBar.INDETERMINATE_PROGRESS : 0);
         atualizarResumo();
     }
 

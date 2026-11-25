@@ -58,6 +58,8 @@ public class DedClient implements AutoCloseable {
 
     /** Turma/divisão abertas no momento — usadas para voltar ao lugar certo entre avaliações. */
     private String divisaoAtual;
+    /** Alunos lidos da "Visão Geral da Turma" ao abrir a turma (evita abrir uma avaliação só para isso). */
+    private List<Aluno> alunosDaTurma = List.of();
 
     public DedClient(Consumer<String> log) {
         this.log = log;
@@ -493,7 +495,9 @@ public class DedClient implements AutoCloseable {
             log.accept("Abrindo a turma no DED+...");
             clicarSeguro(page.locator("[data-lnd-turma='" + idx + "']"));
             esperarCarregar();
-            if (!naPaginaAvaliacoes(3_000)) {
+            alunosDaTurma = List.of();
+            if (!naPaginaAvaliacoes(1_500)) {
+                alunosDaTurma = lerAlunosVisaoGeral();
                 log.accept("Entrando em Avaliações...");
                 entrarEmAvaliacoes();
             }
@@ -513,6 +517,11 @@ public class DedClient implements AutoCloseable {
     /** Lista os alunos abrindo a primeira avaliação (todas têm os mesmos alunos) e volta. */
     public CompletableFuture<List<Aluno>> listarAlunos(String divisao) {
         return naThread(() -> {
+            if (!alunosDaTurma.isEmpty()) {
+                log.accept(alunosDaTurma.size() + " aluno(s) na turma.");
+                return alunosDaTurma;
+            }
+            // plano B: abre a primeira avaliação e lê de lá
             garantirAvaliacoes(divisao);
             if (lerAvaliacoes().isEmpty()) return List.of();
             abrirAvaliacao(0);
@@ -586,7 +595,7 @@ public class DedClient implements AutoCloseable {
             }
 
             clicar("notas.salvar");
-            page.waitForTimeout(2_500);
+            page.waitForTimeout(1_200);
             esperarCarregar();
 
             // Conferência: recarrega a página e lê o que o DED+ realmente gravou.
@@ -657,7 +666,8 @@ public class DedClient implements AutoCloseable {
         // Atenção: o cabeçalho da tela de Avaliações também parece um "cartão de turma";
         // por isso confere o ENDEREÇO antes de confiar nos cartões.
         if (naTelaInicial() && marcarCartoes("turma", 1_500) > 0) return;
-        page.navigate("https://dedmais.educacao.mg.gov.br/");
+        page.navigate("https://dedmais.educacao.mg.gov.br/",
+                new Page.NavigateOptions().setWaitUntil(com.microsoft.playwright.options.WaitUntilState.DOMCONTENTLOADED));
         esperarCarregar();
         if (marcarCartoes("turma", TIMEOUT_MS) == 0) {
             throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
@@ -669,7 +679,7 @@ public class DedClient implements AutoCloseable {
         long limite = System.currentTimeMillis() + ms;
         String re = sel.texto("rotulo.avaliacoes.pagina");
         do {
-            Object ok = page.evaluate("re => new RegExp(re,'i').test(document.body.innerText)", re);
+            Object ok = page.evaluate("re => new RegExp(re,'i').test(document.body.textContent)", re);
             if (Boolean.TRUE.equals(ok) && page.url().contains("/avaliacao") && !page.url().contains("detalhe")) return true;
             page.waitForTimeout(300);
         } while (System.currentTimeMillis() < limite);
@@ -683,7 +693,6 @@ public class DedClient implements AutoCloseable {
         if (divisao != null && !divisao.equals(divisaoAtual)) {
             selecionarDivisao(divisao);
             esperarCarregar();
-            page.waitForTimeout(800);
             divisaoAtual = divisao;
         }
         marcarCartoes("avaliacao", 8_000);
@@ -783,7 +792,14 @@ public class DedClient implements AutoCloseable {
                 throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO, "Não consegui voltar para Avaliações.");
             }
         }
-        divisaoAtual = null; // após voltar, o DED+ pode ter resetado a divisão
+        // após voltar, o DED+ pode ter mudado a divisão: lê a que está na tela (só troca se precisar)
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> r = (Map<String, Object>) page.evaluate(JS_DIVISAO, RE_DIVISAO);
+            divisaoAtual = (String) r.get("atual");
+        } catch (PlaywrightException e) {
+            divisaoAtual = null;
+        }
         garantirAvaliacoes(divisao);
     }
 
@@ -804,7 +820,7 @@ public class DedClient implements AutoCloseable {
         do {
             n = ((Number) page.evaluate(JS_MARCAR, arg)).intValue();
             if (n > 0 || esperaMs <= 0) return n;
-            page.waitForTimeout(400);
+            page.waitForTimeout(250);
         } while (System.currentTimeMillis() < limite);
         return n;
     }
@@ -872,7 +888,7 @@ public class DedClient implements AutoCloseable {
         try {
             page.waitForLoadState(LoadState.DOMCONTENTLOADED, new Page.WaitForLoadStateOptions().setTimeout(10_000));
         } catch (PlaywrightException ignored) {}
-        page.waitForTimeout(700);
+        page.waitForTimeout(250);
     }
 
     /** Clica com limite de 8 s; se o clique "normal" não acontecer, clica via JavaScript. */
@@ -882,7 +898,7 @@ public class DedClient implements AutoCloseable {
                     "O item que eu ia clicar não está na tela do DED+. Tente de novo.");
         }
         try {
-            l.first().click(new Locator.ClickOptions().setTimeout(8_000));
+            l.first().click(new Locator.ClickOptions().setTimeout(3_000));
         } catch (PlaywrightException e) {
             log.accept("(clique alternativo)");
             l.first().evaluate("el => { el.scrollIntoView({block: 'center'}); el.click(); }");
@@ -911,6 +927,23 @@ public class DedClient implements AutoCloseable {
         if (!naPaginaAvaliacoes(8_000)) {
             throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
                     "Não encontrei a tela de Avaliações desta turma. Captura em " + pastaCapturas());
+        }
+    }
+
+    /** Lê nome + matrícula dos alunos no "Relatório Geral" da Visão Geral da Turma. Vazio se não conseguir. */
+    @SuppressWarnings("unchecked")
+    private List<Aluno> lerAlunosVisaoGeral() {
+        try {
+            Map<String, Object> r = (Map<String, Object>) page.evaluate(JS_ALUNOS_VISAO_GERAL);
+            List<Map<String, Object>> lista = (List<Map<String, Object>>) r.get("alunos");
+            Number total = (Number) r.get("total");
+            List<Aluno> alunos = new ArrayList<>();
+            for (Map<String, Object> m : lista) alunos.add(new Aluno((String) m.get("matricula"), (String) m.get("nome")));
+            // só usa se bater EXATAMENTE com o "Total de alunos" da tela (lista incompleta ou com sobra -> plano B)
+            if (alunos.isEmpty() || (total != null && total.intValue() > 0 && alunos.size() != total.intValue())) return List.of();
+            return alunos;
+        } catch (PlaywrightException e) {
+            return List.of();
         }
     }
 
@@ -969,7 +1002,7 @@ public class DedClient implements AutoCloseable {
             let e = n.parentElement;
             if (!e || e.offsetParent === null) continue;
             while (e && e !== document.body) {
-              const t = e.innerText || '';
+              const t = e.textContent || '';   // textContent não força o navegador a redesenhar (innerText força)
               if (exs.every(x => x.test(t))) break;
               e = e.parentElement;
             }
@@ -1058,11 +1091,18 @@ public class DedClient implements AutoCloseable {
           }
           // 2) menu próprio: elemento visível cujo texto é só "3º Trimestre", de preferência perto do rótulo
           const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-          const cands = [...document.querySelectorAll('body *')].filter(e => visivel(e) && rx.test(e.innerText || ''));
-          // menor elemento (sem filho que também case)
-          const folhas = cands.filter(e => ![...e.children].some(c => rx.test(c.innerText || '')));
+          // percorre só os TEXTOS da página (rápido) e pega o elemento que os contém
+          const folhas = []; let rot = null;
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            const t = n.textContent;
+            if (!rot && /seleciona a divis/i.test(t)) rot = n.parentElement;
+            if (!/\\d/.test(t)) continue;
+            let e = n.parentElement;
+            if (e && rx.test(e.textContent || '') && visivel(e) && !folhas.includes(e)) folhas.push(e);
+          }
           folhas.forEach(e => e.setAttribute('data-lnd-antes', '1'));
-          const rot = [...document.querySelectorAll('body *')].find(e => /seleciona a divis/i.test(e.innerText || '') && e.children.length < 6);
           const clicavel = e => e.closest('button, select, [role=combobox], [role=button], mat-select, .mat-mdc-select, [aria-haspopup], [class*=select], [class*=dropdown]') || e;
           let alvo = null;
           if (rot) {
@@ -1070,9 +1110,9 @@ public class DedClient implements AutoCloseable {
             alvo = folhas.find(e => (caixa && caixa.contains(e)) || (rot.parentElement && rot.parentElement.contains(e)));
           }
           if (!alvo) alvo = folhas.find(e => clicavel(e) !== e);
-          if (!alvo) return { tipo: null, atual: folhas.length ? folhas[0].innerText.trim() : null, opcoes: [] };
+          if (!alvo) return { tipo: null, atual: folhas.length ? folhas[0].textContent.trim() : null, opcoes: [] };
           clicavel(alvo).setAttribute('data-lnd-divisao', 'gatilho');
-          return { tipo: 'custom', atual: alvo.innerText.trim(), opcoes: [] };
+          return { tipo: 'custom', atual: alvo.textContent.trim(), opcoes: [] };
         }
         """;
 
@@ -1082,12 +1122,16 @@ public class DedClient implements AutoCloseable {
           const rx = new RegExp(re, 'i');
           document.querySelectorAll('[data-lnd-divisao-opcao]').forEach(e => e.removeAttribute('data-lnd-divisao-opcao'));
           const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-          const ops = [...document.querySelectorAll('[role=option], mat-option, li, [class*=option], [class*=item], body *')]
-            .filter(e => visivel(e) && rx.test(e.innerText || '') && !e.hasAttribute('data-lnd-antes')
-                         && ![...e.children].some(c => rx.test(c.innerText || '')));
+          const ops = [];
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            const e = n.parentElement;
+            if (e && rx.test(e.textContent || '') && !e.hasAttribute('data-lnd-antes') && visivel(e) && !ops.includes(e)) ops.push(e);
+          }
           const vistos = new Set(); const nomes = [];
           for (const e of ops) {
-            const t = e.innerText.trim();
+            const t = e.textContent.trim();
             if (vistos.has(t)) continue;
             vistos.add(t); nomes.push(t);
             e.setAttribute('data-lnd-divisao-opcao', t);
@@ -1103,10 +1147,15 @@ public class DedClient implements AutoCloseable {
     private static final String JS_ATALHO_AVALIACOES = """
         () => {
           document.querySelectorAll('[data-lnd-atalho]').forEach(e => e.removeAttribute('data-lnd-atalho'));
-          const exato = e => /^\\s*avalia[cç][oõ]es\\s*$/i.test(e.innerText || '');
+          const exato = e => /^\\s*avalia[cç][oõ]es\\s*$/i.test(e.textContent || '');
           const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-          const folha = [...document.querySelectorAll('body *')].find(e => visivel(e) && exato(e)
-                         && ![...e.children].some(exato));
+          let folha = null;
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            const e = n.parentElement;
+            if (e && exato(e) && visivel(e)) { folha = e; break; }
+          }
           if (!folha) return [];
           const alvos = [];
           const add = e => { if (e && e !== document.body && !alvos.includes(e)) alvos.push(e); };
@@ -1115,7 +1164,7 @@ public class DedClient implements AutoCloseable {
           let p = folha;
           for (let i = 0; i < 4 && p.parentElement; i++) {
             p = p.parentElement;
-            if (/avalia[cç][oõ]es\\s+simave/i.test(p.innerText || '') || /chamada/i.test(p.innerText || '')) break;
+            if (/avalia[cç][oõ]es\\s+simave/i.test(p.textContent || '') || /chamada/i.test(p.textContent || '')) break;
             if (getComputedStyle(p).cursor === 'pointer') { add(p); break; }
           }
           // ícone do atalho (imagem/svg/círculo) dentro do mesmo bloco
@@ -1125,6 +1174,33 @@ public class DedClient implements AutoCloseable {
           add(folha);
           alvos.forEach((e, i) => e.setAttribute('data-lnd-atalho', String(i)));
           return alvos.map(e => e.tagName);
+        }
+        """;
+
+    /** Relatório Geral da Visão Geral da Turma: cada aluno = link com o nome + matrícula logo abaixo. */
+    private static final String JS_ALUNOS_VISAO_GERAL = """
+        () => {
+          const tot = (document.body.innerText.match(/Total de alunos:?\\s*(\\d+)/i) || [])[1];
+          const alunos = []; const vistos = new Set();
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            const mat = n.textContent.trim();
+            if (!/^\\d{6,10}$/.test(mat) || vistos.has(mat)) continue;
+            // sobe até o bloco do aluno: o menor bloco com UM link de nome (em maiúsculas).
+            // Se o primeiro bloco com link já tiver vários nomes, é a lista inteira -> não é matrícula de aluno.
+            const ehNome = a => { const t = (a.textContent || '').trim(); return /^[A-ZÀ-Ý][A-ZÀ-Ý'. -]{4,}$/.test(t) && t.includes(' '); };
+            let e = n.parentElement, link = null;
+            for (let i = 0; i < 4 && e && e !== document.body; i++, e = e.parentElement) {
+              const nomes = [...e.querySelectorAll('a')].filter(ehNome);
+              if (nomes.length === 1) { link = nomes[0]; break; }
+              if (nomes.length > 1) break;
+            }
+            if (!link) continue;
+            vistos.add(mat);
+            alunos.push({ matricula: mat, nome: link.textContent.trim().replace(/\\s+/g, ' ') });
+          }
+          return { total: tot ? Number(tot) : null, alunos };
         }
         """;
 
