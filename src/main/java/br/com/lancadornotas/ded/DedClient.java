@@ -481,9 +481,17 @@ public class DedClient implements AutoCloseable {
     public CompletableFuture<List<String>> abrirTurma(Turma t) {
         return naThread(() -> {
             irParaInicio();
-            marcarCartoes("turma", 10_000);
+            // acha a turma pelo NOME (a posição na lista pode mudar)
+            Integer idx = null;
+            for (Map<String, Object> m : infoCartoes("turma")) {
+                if (rotuloTurma((String) m.get("texto")).equals(t.rotulo())) { idx = ((Number) m.get("i")).intValue(); break; }
+            }
+            if (idx == null) {
+                throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
+                        "Não achei a turma \"" + t.rotulo() + "\" na tela inicial do DED+. Feche e abra o programa.");
+            }
             log.accept("Abrindo a turma no DED+...");
-            clicarSeguro(page.locator("[data-lnd-turma='" + t.indice() + "']"));
+            clicarSeguro(page.locator("[data-lnd-turma='" + idx + "']"));
             esperarCarregar();
             if (!naPaginaAvaliacoes(3_000)) {
                 log.accept("Entrando em Avaliações...");
@@ -637,8 +645,22 @@ public class DedClient implements AutoCloseable {
 
     // ================================================================== navegação interna
 
+    /** Tela inicial do DED+ (lista de turmas): endereço sem caminho, ou /home, /inicio. */
+    private boolean naTelaInicial() {
+        try {
+            java.net.URI u = java.net.URI.create(page.url());
+            String caminho = u.getPath() == null ? "" : u.getPath().replaceAll("/+$", "").toLowerCase(Locale.ROOT);
+            return u.getHost() != null && u.getHost().contains("dedmais")
+                    && (caminho.isEmpty() || caminho.equals("/home") || caminho.equals("/inicio"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void irParaInicio() {
-        if (page.url().contains("dedmais") && marcarCartoes("turma", 1_500) > 0) return;
+        // Atenção: o cabeçalho da tela de Avaliações também parece um "cartão de turma";
+        // por isso confere o ENDEREÇO antes de confiar nos cartões.
+        if (naTelaInicial() && marcarCartoes("turma", 1_500) > 0) return;
         page.navigate("https://dedmais.educacao.mg.gov.br/");
         esperarCarregar();
         if (marcarCartoes("turma", TIMEOUT_MS) == 0) {
@@ -859,6 +881,10 @@ public class DedClient implements AutoCloseable {
 
     /** Clica com limite de 8 s; se o clique "normal" não acontecer, clica via JavaScript. */
     private void clicarSeguro(Locator l) {
+        if (l.count() == 0) {
+            throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
+                    "O item que eu ia clicar não está na tela do DED+. Tente de novo.");
+        }
         try {
             l.first().click(new Locator.ClickOptions().setTimeout(8_000));
         } catch (PlaywrightException e) {
