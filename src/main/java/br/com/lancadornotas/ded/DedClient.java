@@ -495,11 +495,7 @@ public class DedClient implements AutoCloseable {
             esperarCarregar();
             if (!naPaginaAvaliacoes(3_000)) {
                 log.accept("Entrando em Avaliações...");
-                clicar("turma.abrirAvaliacoes");
-                if (!naPaginaAvaliacoes(TIMEOUT_MS)) {
-                    throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
-                            "Não encontrei a tela de Avaliações desta turma. Captura em " + pastaCapturas());
-                }
+                entrarEmAvaliacoes();
             }
             List<String> opcoes = lerDivisoes();
             log.accept("Divisões: " + opcoes);
@@ -893,6 +889,31 @@ public class DedClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Na "Visão Geral da Turma" há atalhos redondos (Chamada do Dia, Avaliações, Aulas, Avaliações Simave).
+     * Quem responde ao clique pode ser o ícone, o bloco inteiro ou o texto: tenta cada um até abrir.
+     */
+    @SuppressWarnings("unchecked")
+    private void entrarEmAvaliacoes() {
+        List<Object> alvos = (List<Object>) page.evaluate(JS_ATALHO_AVALIACOES);
+        for (int k = 0; k < alvos.size(); k++) {
+            Locator l = page.locator("[data-lnd-atalho='" + k + "']");
+            if (l.count() == 0) continue;
+            try {
+                l.first().click(new Locator.ClickOptions().setTimeout(5_000));
+            } catch (PlaywrightException e) {
+                try { l.first().evaluate("el => el.click()"); } catch (PlaywrightException ignored) {}
+            }
+            if (naPaginaAvaliacoes(6_000)) return;
+        }
+        // último recurso: os seletores do arquivo de configuração
+        try { clicar("turma.abrirAvaliacoes"); } catch (DedException ignored) {}
+        if (!naPaginaAvaliacoes(8_000)) {
+            throw new DedException(DedException.Tipo.ELEMENTO_NAO_ENCONTRADO,
+                    "Não encontrei a tela de Avaliações desta turma. Captura em " + pastaCapturas());
+        }
+    }
+
     private void clicar(String chave) {
         clicarSeguro(primeiro(chave).first());
         esperarCarregar();
@@ -1072,6 +1093,38 @@ public class DedClient implements AutoCloseable {
             e.setAttribute('data-lnd-divisao-opcao', t);
           }
           return nomes;
+        }
+        """;
+
+    /**
+     * Marca, em ordem de preferência, os possíveis pontos de clique do atalho "Avaliações"
+     * (texto exatamente "Avaliações" — não confunde com "Avaliações Simave").
+     */
+    private static final String JS_ATALHO_AVALIACOES = """
+        () => {
+          document.querySelectorAll('[data-lnd-atalho]').forEach(e => e.removeAttribute('data-lnd-atalho'));
+          const exato = e => /^\\s*avalia[cç][oõ]es\\s*$/i.test(e.innerText || '');
+          const visivel = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const folha = [...document.querySelectorAll('body *')].find(e => visivel(e) && exato(e)
+                         && ![...e.children].some(exato));
+          if (!folha) return [];
+          const alvos = [];
+          const add = e => { if (e && e !== document.body && !alvos.includes(e)) alvos.push(e); };
+          add(folha.closest('a, button, [role=button], [role=link], [routerlink], [ng-reflect-router-link]'));
+          // ancestral próximo com cursor de "mãozinha" e que contenha só este atalho
+          let p = folha;
+          for (let i = 0; i < 4 && p.parentElement; i++) {
+            p = p.parentElement;
+            if (/avalia[cç][oõ]es\\s+simave/i.test(p.innerText || '') || /chamada/i.test(p.innerText || '')) break;
+            if (getComputedStyle(p).cursor === 'pointer') { add(p); break; }
+          }
+          // ícone do atalho (imagem/svg/círculo) dentro do mesmo bloco
+          const bloco = folha.parentElement;
+          if (bloco) add([...bloco.querySelectorAll('img, svg, mat-icon, i, button, a, div')].find(e => e !== folha && !e.contains(folha) && visivel(e)));
+          add(bloco);
+          add(folha);
+          alvos.forEach((e, i) => e.setAttribute('data-lnd-atalho', String(i)));
+          return alvos.map(e => e.tagName);
         }
         """;
 
