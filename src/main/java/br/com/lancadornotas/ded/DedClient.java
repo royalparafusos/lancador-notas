@@ -305,9 +305,13 @@ public class DedClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Ao fechar o programa, só SOLTA a conexão: a janela do DED+ continua aberta e logada,
+     * e na próxima vez o programa se conecta direto nela (sem novo login).
+     */
     @Override
     public void close() {
-        try { thread.submit(this::fecharNavegador).get(10, TimeUnit.SECONDS); } catch (Exception ignored) {}
+        try { thread.submit(this::desconectar).get(10, TimeUnit.SECONDS); } catch (Exception ignored) {}
         thread.shutdownNow();
     }
 
@@ -368,9 +372,45 @@ public class DedClient implements AutoCloseable {
      * Abre o navegador normal e ESPERA o professor entrar sozinho (até 15 min).
      * Detecta o fim do login pela URL da aba (sem se conectar a ela) ou pelo botão "Já entrei".
      */
+    /**
+     * Se a janela do programa já estiver aberta com o DED+ LOGADO, conecta direto nela (sem login).
+     * Devolve null se não houver DED+ aberto e logado.
+     */
+    public CompletableFuture<ResultadoLogin> usarDedJaAberto() {
+        return naThread((Login<ResultadoLogin>) () -> {
+            ResultadoLogin r = tentarDedAberto();
+            if (r != null) log.accept("Usando o DED+ que já estava aberto.");
+            return r;
+        });
+    }
+
+    private ResultadoLogin tentarDedAberto() {
+        Integer p = portaAtiva();
+        if (p == null || !respondendo(p)) return null;
+        porta = p;
+        List<String> urls = urlsAbertas();
+        if (urls.stream().noneMatch(DedClient::ehPosLogin) || urls.stream().allMatch(DedClient::ehTelaDeLogin)) return null;
+        try {
+            if (page == null) conectar();
+            ResultadoLogin r = detectarPosLogin(6_000);
+            if (r == null) {
+                // está numa tela interna (ex.: Avaliações): volta para a lista de turmas
+                irParaInicio();
+                r = new ResultadoLogin(List.of(), escolaNoCabecalho());
+            }
+            restaurarJanela();
+            return r;
+        } catch (Exception e) {
+            desconectar();
+            return null;
+        }
+    }
+
     public CompletableFuture<ResultadoLogin> entrar() {
         return naThread((Login<ResultadoLogin>) () -> {
             conectarAgora = false;
+            ResultadoLogin jaAberto = tentarDedAberto();
+            if (jaAberto != null) { log.accept("Usando o DED+ que já estava aberto."); return jaAberto; }
             abrirNavegadorNormal();
             log.accept("Entre no DED+ na janela do navegador (CPF, senha e \"Confirme que é humano\").");
 

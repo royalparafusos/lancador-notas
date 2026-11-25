@@ -67,7 +67,9 @@ public class LoginView {
               + "2.  Vai abrir o DED+ numa janela de internet.\n"
               + "     Entre como você sempre faz: CPF, senha e\n"
               + "     o quadradinho \"Confirme que é humano\".\n\n"
-              + "3.  Pronto! O programa continua sozinho.");
+              + "3.  Pronto! O programa continua sozinho.\n\n"
+              + "Dica: deixe a janela do DED+ aberta. Na próxima vez\n"
+              + "que abrir o programa, ele entra direto, sem novo login.");
         passos.setStyle("-fx-font-size: 15px;");
         passos.setWrapText(true);
 
@@ -94,6 +96,20 @@ public class LoginView {
         aviso.setStyle("-fx-text-fill: #666; -fx-font-size: 12px;");
 
         passoLogin.getChildren().addAll(titulo, passos, abrir, carregando, status, continuar, aviso);
+
+        // Se o DED+ já estiver aberto e logado na janela do programa, entra direto.
+        abrir.setDisable(true);
+        carregando.setVisible(true);
+        status.setText("Procurando um DED+ já aberto...");
+        ded.usarDedJaAberto().whenComplete((r, ex) -> Platform.runLater(() -> {
+            abrir.setDisable(false);
+            carregando.setVisible(false);
+            status.setText("");
+            if (ex == null && r != null) {
+                if (r.precisaEscolherEscola()) mostrarEscolas(r.escolas());
+                else aoEntrar.accept(r.escolaAtual());
+            }
+        }));
     }
 
     private void entrar() {
