@@ -61,8 +61,32 @@ public class DedClient implements AutoCloseable {
     /** Alunos lidos da "Visão Geral da Turma" ao abrir a turma (evita abrir uma avaliação só para isso). */
     private List<Aluno> alunosDaTurma = List.of();
 
-    public DedClient(Consumer<String> log) {
-        this.log = log;
+    public DedClient(Consumer<String> logTela) {
+        this.log = msg -> { logTela.accept(msg); gravarRegistro(msg); };
+    }
+
+    /** Também grava o registro em ~/.lancador-notas-ded/capturas/registro.txt (para diagnóstico). */
+    private static synchronized void gravarRegistro(String msg) {
+        try {
+            Files.createDirectories(pastaCapturas());
+            Path f = pastaCapturas().resolve("registro.txt");
+            if (Files.exists(f) && Files.size(f) > 1_000_000) {
+                Files.move(f, pastaCapturas().resolve("registro-anterior.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            String linha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss")) + "  " + msg + System.lineSeparator();
+            Files.writeString(f, linha, java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {}
+    }
+
+    /** Guarda o código da página atual como capturas/&lt;nome&gt;-ultima.html (sobrescreve). */
+    private void guardarPagina(String nome) {
+        try {
+            String html = (String) page.evaluate("() => { document.querySelectorAll('input[type=password]').forEach(i => i.value=''); "
+                    + "return document.documentElement.outerHTML; }");
+            Files.createDirectories(pastaCapturas());
+            Files.writeString(pastaCapturas().resolve(nome + "-ultima.html"), "<!-- " + page.url() + " -->\n" + html);
+        } catch (Exception ignored) {}
     }
 
     public record ResultadoLogin(List<Escola> escolas, String escolaAtual) {
@@ -523,14 +547,17 @@ public class DedClient implements AutoCloseable {
             }
             // plano B: abre a primeira avaliação e lê de lá
             garantirAvaliacoes(divisao);
-            if (lerAvaliacoes().isEmpty()) return List.of();
+            if (lerAvaliacoes().isEmpty()) {
+                log.accept("⚠ Não achei avaliações nesta divisão para ler a lista de alunos.");
+                return List.of();
+            }
             abrirAvaliacao(0);
             List<Aluno> r = new ArrayList<>();
             for (Map<String, Object> m : lerCartoesAlunos()) {
                 r.add(new Aluno((String) m.get("matricula"), (String) m.get("nome")));
             }
+            log.accept(r.size() + " aluno(s) lidos na tela de notas.");
             voltarParaAvaliacoes(divisao);
-            log.accept(r.size() + " aluno(s) na turma.");
             return r;
         });
     }
@@ -793,6 +820,7 @@ public class DedClient implements AutoCloseable {
     }
 
     private List<Avaliacao> lerAvaliacoes() {
+        guardarPagina("avaliacoes");
         List<Avaliacao> r = new ArrayList<>();
         for (Map<String, Object> m : infoCartoes("avaliacao")) {
             String texto = (String) m.get("texto");
@@ -902,6 +930,7 @@ public class DedClient implements AutoCloseable {
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> lerCartoesAlunos() {
         marcarCartoes("aluno", TIMEOUT_MS);
+        guardarPagina("notas");
         return (List<Map<String, Object>>) page.evaluate(JS_ALUNOS,
                 Map.of("rotuloNota", sel.texto("rotulo.aluno.ancora"), "rotuloNR", sel.texto("rotulo.naoRealizada")));
     }
@@ -1001,6 +1030,7 @@ public class DedClient implements AutoCloseable {
     /** Lê nome + matrícula dos alunos no "Relatório Geral" da Visão Geral da Turma. Vazio se não conseguir. */
     @SuppressWarnings("unchecked")
     private List<Aluno> lerAlunosVisaoGeral() {
+        guardarPagina("visao-geral");
         try {
             Map<String, Object> r = (Map<String, Object>) page.evaluate(JS_ALUNOS_VISAO_GERAL);
             List<Map<String, Object>> lista = (List<Map<String, Object>>) r.get("alunos");

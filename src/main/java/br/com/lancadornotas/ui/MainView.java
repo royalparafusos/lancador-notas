@@ -350,6 +350,15 @@ public class MainView {
                setOcupado(false);
                if (ex != null) { erro("Não consegui carregar a divisão", ex); return; }
                alunos.setAll(lista);
+               if (lista.isEmpty()) {
+                   log("⚠ Não consegui ler a lista de alunos desta turma no DED+.");
+                   Alert a = new Alert(Alert.AlertType.WARNING,
+                           "Não consegui ler a lista de alunos desta turma no DED+.\n\n"
+                           + "Avise quem cuida do programa: os detalhes ficaram salvos na pasta de capturas.", ButtonType.OK);
+                   a.initOwner(stage);
+                   a.setHeaderText("Alunos não encontrados");
+                   a.show();
+               }
                log(avaliacoes.size() + " avaliação(ões): " + avaliacoes.stream().map(Avaliacao::nome).toList());
                if (avaliacoes.isEmpty()) {
                    log("⚠ Esta divisão não tem avaliações cadastradas. Cadastre no DED+ primeiro (botão \"Cadastrar avaliação\").");
