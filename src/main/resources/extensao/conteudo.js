@@ -7,8 +7,10 @@
 //  O DED+ é um site de página única: trocar de tela não recarrega este script.
 // =====================================================================
 (() => {
-  if (window.__lndConector) return;
-  window.__lndConector = true;
+  // cada versão nova do conector assume a página (a antiga, se ainda estiver rodando, para sozinha)
+  const MINHA = (chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?') + ':' + Date.now();
+  if (window.__lndConector && String(window.__lndConector).split(':')[0] === MINHA.split(':')[0]) return;
+  window.__lndConector = MINHA;
 
   // ------------------------------------------------------------------ utilidades
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -591,7 +593,7 @@
     // Na tela de LOGIN do Seg.ID o conector fica totalmente quieto (não conversa com o programa).
     // Só começa a trabalhar na "Seleção de Unidades" ou dentro do DED+.
     while (location.hostname.includes('ssc.prodemge') && tela() === 'login') await sleep(1500);
-    while (true) {
+    while (window.__lndConector === MINHA) {
       try {
         if (!ocupado) {
           const cmd = await chrome.runtime.sendMessage({

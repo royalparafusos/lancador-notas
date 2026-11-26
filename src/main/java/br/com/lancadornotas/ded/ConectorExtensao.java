@@ -73,6 +73,9 @@ public class ConectorExtensao implements AutoCloseable {
     public String urlAtual() { return urlAtual; }
 
     /** Conectado, mas com o conector de uma versão anterior (precisa clicar em ↻ em chrome://extensions)? */
+    public String versaoConectada() { return versaoConectada; }
+    public String versaoEsperada() { return versaoExtensaoEsperada; }
+
     public boolean desatualizado() {
         return conectado() && !versaoConectada.isEmpty() && !versaoConectada.equals(versaoExtensaoEsperada);
     }

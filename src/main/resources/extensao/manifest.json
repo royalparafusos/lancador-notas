@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lançador de Notas — Conector do DED+",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Liga o programa Lançador de Notas ao DED+ aberto neste navegador. Só funciona nas páginas do DED+/Seg.ID e só conversa com o programa neste computador.",
   "icons": {
     "128": "icone.png"
