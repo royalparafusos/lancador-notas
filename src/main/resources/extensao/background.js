@@ -42,15 +42,31 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
   }
 });
 
-// Quando o conector é instalado/atualizado (ou o navegador abre), coloca o conector nas abas do DED+
-// que JÁ estavam abertas — senão elas só funcionariam depois de recarregar a página.
+// ---------------------------------------------------------------------------------------------
+//  A parte que mexe no DED+ (conteudo.js) NÃO fica presa na extensão: é colocada em cada página
+//  do DED+ quando ela abre, lida da pasta na hora. Assim, quando o programa se atualiza e grava um
+//  conteudo.js novo na pasta, basta abrir/atualizar o DED+ — não precisa clicar no ↻ da extensão.
+// ---------------------------------------------------------------------------------------------
+const DED = /^https:\/\/(dedmais\.educacao\.mg\.gov\.br|ssc\.prodemge\.gov\.br)\//;
+
+async function injetar(tabId) {
+  try {
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => !!window.__lndConector });
+    if (r && r.result) return; // já está rodando nesta página
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['conteudo.js'] });
+  } catch (e) { /* aba fechou ou sem acesso */ }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === 'complete' && DED.test(tab.url || '')) injetar(tabId);
+});
+
 async function colocarNasAbasAbertas() {
   try {
     const abasDed = await chrome.tabs.query({ url: ['https://dedmais.educacao.mg.gov.br/*', 'https://ssc.prodemge.gov.br/*'] });
-    for (const t of abasDed) {
-      try { await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['conteudo.js'] }); } catch (e) { /* aba sem acesso */ }
-    }
+    for (const t of abasDed) await injetar(t.id);
   } catch (e) { /* sem permissão */ }
 }
 chrome.runtime.onInstalled.addListener(colocarNasAbasAbertas);
 chrome.runtime.onStartup.addListener(colocarNasAbasAbertas);
+colocarNasAbasAbertas();

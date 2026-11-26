@@ -7,9 +7,9 @@
 //  O DED+ é um site de página única: trocar de tela não recarrega este script.
 // =====================================================================
 (() => {
-  // cada versão nova do conector assume a página (a antiga, se ainda estiver rodando, para sozinha)
-  const MINHA = (chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?') + ':' + Date.now();
-  if (window.__lndConector && String(window.__lndConector).split(':')[0] === MINHA.split(':')[0]) return;
+  // uma cópia por página (a extensão coloca este arquivo quando a página abre; F5 traz a versão nova)
+  if (window.__lndConector) return;
+  const MINHA = 'c' + Date.now();
   window.__lndConector = MINHA;
 
   // ------------------------------------------------------------------ utilidades

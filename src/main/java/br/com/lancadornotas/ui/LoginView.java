@@ -223,7 +223,15 @@ public class LoginView {
                 instalar.getChildren().add(edge);
             }
         } else {
-            instalar.getChildren().addAll(new Separator(), t, p, copiar, pasta, caminho);
+            t.setText("Primeira vez neste computador? Instale o conector (1 minuto, uma vez só):");
+            p.setText("Clique no botão abaixo: o programa abre o navegador no lugar certo e já copia o que precisa.\n"
+                    + "Atenção: na tela de LOGIN do Seg.ID não aperte F5.");
+            Button assistente = new Button("🧩  Instalar o conector no navegador");
+            assistente.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+            assistente.setMaxWidth(Double.MAX_VALUE);
+            assistente.setPrefHeight(44);
+            assistente.setOnAction(e -> AssistenteConector.iniciar());
+            instalar.getChildren().addAll(new Separator(), t, p, assistente, pasta, caminho);
         }
         instalar.setVisible(false);
         instalar.setManaged(false);

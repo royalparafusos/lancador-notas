@@ -24,7 +24,7 @@ public final class ExtensaoArquivos {
      * para chegar (revisão da loja + atualização do navegador), então o programa não exige a versão
      * mais nova — só sobe este número quando o programa depender de algo que só existe no conector novo.
      */
-    public static final String VERSAO_MINIMA = "1.2.2";
+    public static final String VERSAO_MINIMA = "1.4.0";
 
     /** Endereços do conector nas lojas (vazio = ainda não publicado; usa a instalação pela pasta). */
     public static final String LOJA_CHROME = "";
