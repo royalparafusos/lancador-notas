@@ -23,6 +23,9 @@ permissions:
 jobs:
   publicar:
     runs-on: windows-latest
+    env:
+      CWS_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      EDGE_PRODUTO: ${{ secrets.EDGE_PRODUCT_ID }}
     steps:
       - uses: actions/checkout@v5
 
@@ -56,13 +59,58 @@ jobs:
             "${{ steps.v.outputs.versao }}" "${{ steps.v.outputs.libs }}" "$SHA" "$URL" "$NOVIDADES" > target/versao.json
           cat target/versao.json
 
+      - name: Pacote do conector (para as lojas do Chrome e do Edge)
+        id: ext
+        shell: pwsh
+        run: |
+          $v = (Get-Content src/main/resources/extensao/manifest.json -Raw | ConvertFrom-Json).version
+          "versao=$v" >> $env:GITHUB_OUTPUT
+          Compress-Archive -Path src/main/resources/extensao/* -DestinationPath target/conector-ded.zip -Force
+          Write-Host "Conector $v"
+
       - name: Publicar
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "v${{ steps.v.outputs.versao }}" \
-            target/lancador-notas-ded.jar target/versao.json \
+            target/lancador-notas-ded.jar target/versao.json target/conector-ded.zip \
             --title "Versão ${{ steps.v.outputs.versao }}" \
             --notes "$(git log -1 --pretty=%B)" \
             --latest
+
+      # ---------------------------------------------------------------
+      #  Conector nas lojas: só roda quando os segredos existem
+      #  (Settings > Secrets and variables > Actions). A loja só aceita
+      #  versão nova do manifest.json; versão repetida é ignorada.
+      # ---------------------------------------------------------------
+      - name: Enviar conector para a Chrome Web Store
+        if: ${{ env.CWS_ID != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          TOKEN=$(curl -s https://oauth2.googleapis.com/token -d client_id=$CWS_CLIENT_ID -d client_secret=$CWS_CLIENT_SECRET \
+                  -d refresh_token=$CWS_REFRESH_TOKEN -d grant_type=refresh_token | sed -n 's/.*"access_token": *"\([^"]*\)".*/\1/p')
+          curl -s -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" -X PUT -T target/conector-ded.zip \
+               "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_ID"; echo
+          curl -s -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" -H "Content-Length: 0" -X POST \
+               "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_ID/publish"; echo
+
+      - name: Enviar conector para a loja do Edge
+        if: ${{ env.EDGE_PRODUTO != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+        run: |
+          API=https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUTO/submissions
+          curl -s -i -H "Authorization: ApiKey $EDGE_API_KEY" -H "X-ClientID: $EDGE_CLIENT_ID" \
+               -H "Content-Type: application/zip" -X POST -T target/conector-ded.zip "$API/draft/package" | head -1
+          sleep 30
+          curl -s -i -H "Authorization: ApiKey $EDGE_API_KEY" -H "X-ClientID: $EDGE_CLIENT_ID" \
+               -H "Content-Type: application/json" -X POST -d '{"notes":"Atualização automática"}' "$API" | head -1

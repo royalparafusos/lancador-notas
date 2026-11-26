@@ -1,6 +1,9 @@
 // Lançador de Notas — ponte entre as páginas do DED+ e o programa (só no próprio computador).
 // As ordens do programa chegam por http://127.0.0.1:47321 e vão para UMA aba do DED+ (a "principal").
-importScripts('token.js'); // define TOKEN (gerado pelo programa; impede que sites falem com o programa)
+// token.js só existe quando o conector é carregado da pasta do programa (modo desenvolvedor).
+// Instalado pela loja (Chrome Web Store / Edge), não há token: o programa reconhece a extensão pela origem.
+try { importScripts('token.js'); } catch (e) { /* instalado pela loja */ }
+const CHAVE = (typeof TOKEN !== 'undefined') ? TOKEN : '';
 
 const PROGRAMA = 'http://127.0.0.1:47321';
 const abas = {};            // id -> { visto: ms, visivel: bool, url }
@@ -24,7 +27,7 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
     escolherPrincipal();
     if (aba !== principal) { responder(null); return; }
     const q = '?url=' + encodeURIComponent(msg.url) + '&ext=' + chrome.runtime.getManifest().version;
-    fetch(PROGRAMA + '/proximo' + q, { cache: 'no-store', headers: { 'X-Token': TOKEN } })
+    fetch(PROGRAMA + '/proximo' + q, { method: 'POST', cache: 'no-store', headers: { 'X-Token': CHAVE } })
       .then(r => (r.status === 200 ? r.json() : null))
       .then(cmd => responder(cmd))
       .catch(() => responder(null));
@@ -32,7 +35,7 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
   }
   if (msg.tipo === 'resposta' || msg.tipo === 'progresso') {
     fetch(PROGRAMA + '/' + msg.tipo, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': TOKEN },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': CHAVE },
       body: JSON.stringify(msg.dados)
     }).then(() => responder(true)).catch(() => responder(false));
     return true;

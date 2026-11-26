@@ -203,7 +203,28 @@ public class LoginView {
         Label caminho = new Label(ExtensaoArquivos.PASTA.toString());
         caminho.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
         caminho.setWrapText(true);
-        instalar.getChildren().addAll(new Separator(), t, p, copiar, pasta, caminho);
+        if (!ExtensaoArquivos.LOJA_CHROME.isEmpty() || !ExtensaoArquivos.LOJA_EDGE.isEmpty()) {
+            // conector publicado na loja: 1 clique e o navegador atualiza sozinho
+            t.setText("Primeira vez neste computador? Instale o conector (1 clique):");
+            p.setText("Clique no botão do seu navegador, depois em \"Usar no Chrome\" (ou \"Obter\" no Edge)\n"
+                    + "e confirme em \"Adicionar extensão\". Depois abra o DED+ pelo botão azul acima.\n"
+                    + "Atenção: na tela de LOGIN do Seg.ID não aperte F5.");
+            instalar.getChildren().addAll(new Separator(), t, p);
+            if (!ExtensaoArquivos.LOJA_CHROME.isEmpty()) {
+                Button chrome = new Button("Instalar no Google Chrome");
+                chrome.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+                chrome.setOnAction(e -> host.showDocument(ExtensaoArquivos.LOJA_CHROME));
+                instalar.getChildren().add(chrome);
+            }
+            if (!ExtensaoArquivos.LOJA_EDGE.isEmpty()) {
+                Button edge = new Button("Instalar no Microsoft Edge");
+                edge.setStyle("-fx-font-size: 14px; -fx-font-weight: bold;");
+                edge.setOnAction(e -> host.showDocument(ExtensaoArquivos.LOJA_EDGE));
+                instalar.getChildren().add(edge);
+            }
+        } else {
+            instalar.getChildren().addAll(new Separator(), t, p, copiar, pasta, caminho);
+        }
         instalar.setVisible(false);
         instalar.setManaged(false);
 

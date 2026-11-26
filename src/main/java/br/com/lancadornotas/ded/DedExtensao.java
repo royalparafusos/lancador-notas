@@ -38,6 +38,11 @@ public class DedExtensao implements Ded {
     @Override public boolean usaExtensao() { return true; }
     @Override public boolean conectorConectado() { return conector.conectado(); }
     @Override public String problemaConector() {
+        if (conector.desatualizado() && conector.viaLoja()) {
+            return "O conector do navegador está na versão " + conector.versaoConectada() + " e o programa precisa da "
+                 + conector.versaoEsperada() + ". O navegador atualiza sozinho em algumas horas; para atualizar agora, "
+                 + "feche TODAS as janelas do navegador, abra de novo e entre no DED+.";
+        }
         if (conector.senhaErrada() || conector.desatualizado()) {
             return "O conector precisa ser atualizado (está " + conector.versaoConectada() + ", precisa " + conector.versaoEsperada() + "): abra chrome://extensions, confira se o "
                  + "\"Lançador de Notas — Conector\" está LIGADO e clique no botão ↻ (recarregar) dele. "
@@ -62,14 +67,7 @@ public class DedExtensao implements Ded {
     }
 
     private JsonNode ordem(String cmd, Map<String, Object> args, long timeoutMs) throws Exception {
-        if (conector.desatualizado()) {
-            throw new IllegalStateException("O Chrome ainda está com o conector ANTIGO (versão " + conector.versaoConectada()
-                    + "; precisa da " + conector.versaoEsperada() + ").\n\n"
-                    + "1) No Chrome, abra chrome://extensions\n"
-                    + "2) No \"Lançador de Notas — Conector\", clique no botão ↻ (recarregar)\n"
-                    + "3) Volte ao DED+ e aperte F5 (com as turmas na tela)\n"
-                    + "Depois tente de novo aqui.");
-        }
+        if (conector.desatualizado()) throw new IllegalStateException(problemaConector());
         try {
             return conector.enviar(cmd, args, timeoutMs).get();
         } catch (ExecutionException e) {

@@ -45,6 +45,7 @@ public class ConectorExtensao implements AutoCloseable {
     private volatile long ultimaSenhaErrada;
     private volatile String urlAtual = "";
     private volatile String versaoConectada = "";
+    private volatile boolean viaLoja = false;
 
     public ConectorExtensao(String token, String versaoExtensaoEsperada, Consumer<String> progresso) throws IOException {
         this.token = token;
@@ -77,8 +78,21 @@ public class ConectorExtensao implements AutoCloseable {
     public String versaoEsperada() { return versaoExtensaoEsperada; }
 
     public boolean desatualizado() {
-        return conectado() && !versaoConectada.isEmpty() && !versaoConectada.equals(versaoExtensaoEsperada);
+        return conectado() && !versaoConectada.isEmpty() && compararVersao(versaoConectada, versaoExtensaoEsperada) < 0;
     }
+
+    /** O conector conectado veio da loja (atualiza sozinho) ou da pasta do programa (precisa do ↻)? */
+    public boolean viaLoja() { return viaLoja; }
+
+    static int compararVersao(String a, String b) {
+        String[] x = a.split("\\."), y = b.split("\\.");
+        for (int i = 0; i < Math.max(x.length, y.length); i++) {
+            int p = i < x.length ? numero(x[i]) : 0, q = i < y.length ? numero(y[i]) : 0;
+            if (p != q) return Integer.compare(p, q);
+        }
+        return 0;
+    }
+    private static int numero(String s) { try { return Integer.parseInt(s.replaceAll("\\D", "")); } catch (Exception e) { return 0; } }
 
     /** A extensão está tentando conversar, mas com a senha interna errada (arquivos antigos)? */
     public boolean senhaErrada() {
@@ -109,9 +123,17 @@ public class ConectorExtensao implements AutoCloseable {
 
     // ------------------------------------------------------------------ HTTP
 
+    /**
+     * Quem pode falar com o programa: o conector da pasta do programa (com o token certo) ou
+     * o conector instalado pela loja do Chrome/Edge — reconhecido pela origem "chrome-extension://",
+     * que sites da internet não conseguem imitar.
+     */
     private boolean autorizado(HttpExchange ex) throws IOException {
         String t = ex.getRequestHeaders().getFirst("X-Token");
-        if (t == null || !t.equals(token)) {
+        String origem = ex.getRequestHeaders().getFirst("Origin");
+        boolean comToken = t != null && !t.isEmpty() && t.equals(token);
+        boolean daLoja = origem != null && (origem.startsWith("chrome-extension://") || origem.startsWith("extension://"));
+        if (!comToken && !daLoja) {
             ultimaSenhaErrada = System.currentTimeMillis();
             responder(ex, 403, "{}");
             return false;
@@ -122,6 +144,8 @@ public class ConectorExtensao implements AutoCloseable {
     private void proximo(HttpExchange ex) throws IOException {
         if (!autorizado(ex)) return;
         ultimoContato = System.currentTimeMillis();
+        String t = ex.getRequestHeaders().getFirst("X-Token");
+        viaLoja = t == null || t.isEmpty() || !t.equals(token);
         Map<String, String> q = parametros(ex.getRequestURI().getRawQuery());
         if (q.containsKey("url")) urlAtual = q.get("url");
         versaoConectada = q.getOrDefault("ext", "");

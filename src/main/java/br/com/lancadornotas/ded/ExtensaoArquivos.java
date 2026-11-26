@@ -19,6 +19,17 @@ public final class ExtensaoArquivos {
     public static final Path PASTA = Config.PASTA.resolve("extensao");
     private static final String[] ARQUIVOS = {"manifest.json", "background.js", "conteudo.js", "icone.png"};
 
+    /**
+     * Versão MÍNIMA do conector que este programa aceita. O conector da loja pode demorar umas horas
+     * para chegar (revisão da loja + atualização do navegador), então o programa não exige a versão
+     * mais nova — só sobe este número quando o programa depender de algo que só existe no conector novo.
+     */
+    public static final String VERSAO_MINIMA = "1.2.2";
+
+    /** Endereços do conector nas lojas (vazio = ainda não publicado; usa a instalação pela pasta). */
+    public static final String LOJA_CHROME = "";
+    public static final String LOJA_EDGE = "";
+
     private ExtensaoArquivos() {}
 
     /** Copia os arquivos e grava o token. Devolve a versão da extensão que acompanha o programa. */
@@ -34,6 +45,7 @@ public final class ExtensaoArquivos {
 
         // A versão do conector é a do manifest.json (sobe só quando os arquivos da extensão mudam).
         // Não há recarga automática: o Chrome pode DESATIVAR uma extensão "sem compactação" que se recarrega sozinha.
-        return new ObjectMapper().readTree(PASTA.resolve("manifest.json").toFile()).path("version").asText();
+        new ObjectMapper().readTree(PASTA.resolve("manifest.json").toFile()); // confere que o manifest é válido
+        return VERSAO_MINIMA;
     }
 }
