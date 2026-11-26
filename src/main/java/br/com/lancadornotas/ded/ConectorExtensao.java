@@ -142,7 +142,13 @@ public class ConectorExtensao implements AutoCloseable {
         CompletableFuture<JsonNode> f = pendentes.remove(r.path("id").asText());
         if (f == null) return;
         if (r.path("ok").asBoolean(false)) f.complete(r.path("resultado"));
-        else f.completeExceptionally(new DedException(DedException.Tipo.OUTRO, r.path("erro").asText("erro no DED+")));
+        else {
+            String erro = r.path("erro").asText("");
+            if (erro.isBlank() || erro.equals("null")) {
+                erro = "O DED+ não respondeu direito (resposta: " + r + "). Aperte F5 no DED+ e tente de novo.";
+            }
+            f.completeExceptionally(new DedException(DedException.Tipo.OUTRO, erro));
+        }
     }
 
     private void receberProgresso(HttpExchange ex) throws IOException {

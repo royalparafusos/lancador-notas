@@ -53,7 +53,7 @@ public class DedExtensao implements Ded {
         fila.submit(() -> {
             try { f.complete(c.call()); } catch (Throwable t) {
                 Throwable causa = t instanceof ExecutionException && t.getCause() != null ? t.getCause() : t;
-                gravarRegistro("ERRO: " + causa.getMessage());
+                gravarRegistro("ERRO: " + (causa.getMessage() == null ? causa.toString() : causa.getMessage()));
                 guardarPagina("erro");
                 f.completeExceptionally(causa);
             }
