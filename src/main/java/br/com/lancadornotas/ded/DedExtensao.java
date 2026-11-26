@@ -37,6 +37,14 @@ public class DedExtensao implements Ded {
 
     @Override public boolean usaExtensao() { return true; }
     @Override public boolean conectorConectado() { return conector.conectado(); }
+    @Override public String problemaConector() {
+        if (conector.senhaErrada() || conector.desatualizado()) {
+            return "O conector precisa ser atualizado: abra chrome://extensions, confira se o "
+                 + "\"Lançador de Notas — Conector\" está LIGADO e clique no botão ↻ (recarregar) dele. "
+                 + "Depois aperte F5 no DED+ (com as turmas na tela).";
+        }
+        return null;
+    }
 
     // ------------------------------------------------------------------ util
 

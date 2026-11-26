@@ -218,9 +218,13 @@ public class LoginView {
                 status.setText("✓ Conector ativo no navegador.");
                 instalar.setVisible(false);
                 instalar.setManaged(false);
+            } else if (ded.problemaConector() != null) {
+                status.setStyle("-fx-text-fill: #b00020; -fx-font-size: 14px;");
+                status.setText(ded.problemaConector());
             } else {
                 status.setStyle("-fx-text-fill: #333; -fx-font-size: 14px;");
-                status.setText("Esperando o DED+ aberto no navegador...");
+                status.setText("Esperando o DED+ aberto no navegador...\n"
+                        + "(Se o DED+ já está aberto, clique nele e aperte F5 com as turmas na tela.)");
                 if (System.currentTimeMillis() - inicio > 6_000) {
                     instalar.setVisible(true);
                     instalar.setManaged(true);
@@ -236,6 +240,11 @@ public class LoginView {
             if (ex != null) {
                 erro(status, (ex.getCause() != null ? ex.getCause() : ex).getMessage());
                 return;
+            }
+            if (ded.problemaConector() != null) {
+                Alert a = new Alert(Alert.AlertType.WARNING, ded.problemaConector(), ButtonType.OK);
+                a.setHeaderText("Atualize o conector");
+                a.showAndWait();
             }
             if (r.precisaEscolherEscola()) mostrarEscolas(r.escolas());
             else aoEntrar.accept(r.escolaAtual());

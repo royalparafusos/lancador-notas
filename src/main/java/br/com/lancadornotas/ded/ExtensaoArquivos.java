@@ -32,14 +32,8 @@ public final class ExtensaoArquivos {
         }
         Files.writeString(PASTA.resolve("token.js"), "const TOKEN = '" + token + "';\n", StandardCharsets.UTF_8);
 
-        // a versão da extensão acompanha a do programa: assim ela percebe quando há arquivos novos e se recarrega
-        String versao = br.com.lancadornotas.Atualizador.versaoAtual();
-        if (versao != null && versao.matches("\\d+(\\.\\d+){0,3}")) {
-            Path m = PASTA.resolve("manifest.json");
-            String txt = Files.readString(m, StandardCharsets.UTF_8)
-                    .replaceFirst("\"version\"\\s*:\\s*\"[^\"]*\"", "\"version\": \"" + versao + "\"");
-            Files.writeString(m, txt, StandardCharsets.UTF_8);
-        }
+        // A versão do conector é a do manifest.json (sobe só quando os arquivos da extensão mudam).
+        // Não há recarga automática: o Chrome pode DESATIVAR uma extensão "sem compactação" que se recarrega sozinha.
         return new ObjectMapper().readTree(PASTA.resolve("manifest.json").toFile()).path("version").asText();
     }
 }

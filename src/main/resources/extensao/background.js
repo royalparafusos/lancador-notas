@@ -26,10 +26,7 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
     const q = '?url=' + encodeURIComponent(msg.url) + '&ext=' + chrome.runtime.getManifest().version;
     fetch(PROGRAMA + '/proximo' + q, { cache: 'no-store', headers: { 'X-Token': TOKEN } })
       .then(r => (r.status === 200 ? r.json() : null))
-      .then(cmd => {
-        if (cmd && cmd.cmd === '__recarregar_extensao') { responder(null); chrome.runtime.reload(); return; }
-        responder(cmd);
-      })
+      .then(cmd => responder(cmd))
       .catch(() => responder(null));
     return true; // resposta assíncrona
   }
@@ -41,3 +38,16 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
     return true;
   }
 });
+
+// Quando o conector é instalado/atualizado (ou o navegador abre), coloca o conector nas abas do DED+
+// que JÁ estavam abertas — senão elas só funcionariam depois de recarregar a página.
+async function colocarNasAbasAbertas() {
+  try {
+    const abasDed = await chrome.tabs.query({ url: ['https://dedmais.educacao.mg.gov.br/*', 'https://ssc.prodemge.gov.br/*'] });
+    for (const t of abasDed) {
+      try { await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['conteudo.js'] }); } catch (e) { /* aba sem acesso */ }
+    }
+  } catch (e) { /* sem permissão */ }
+}
+chrome.runtime.onInstalled.addListener(colocarNasAbasAbertas);
+chrome.runtime.onStartup.addListener(colocarNasAbasAbertas);

@@ -42,8 +42,9 @@ public class ConectorExtensao implements AutoCloseable {
     });
 
     private volatile long ultimoContato;
+    private volatile long ultimaSenhaErrada;
     private volatile String urlAtual = "";
-    private volatile boolean pediuRecarregar;
+    private volatile String versaoConectada = "";
 
     public ConectorExtensao(String token, String versaoExtensaoEsperada, Consumer<String> progresso) throws IOException {
         this.token = token;
@@ -70,6 +71,16 @@ public class ConectorExtensao implements AutoCloseable {
     }
 
     public String urlAtual() { return urlAtual; }
+
+    /** Conectado, mas com o conector de uma versão anterior (precisa clicar em ↻ em chrome://extensions)? */
+    public boolean desatualizado() {
+        return conectado() && !versaoConectada.isEmpty() && !versaoConectada.equals(versaoExtensaoEsperada);
+    }
+
+    /** A extensão está tentando conversar, mas com a senha interna errada (arquivos antigos)? */
+    public boolean senhaErrada() {
+        return !conectado() && System.currentTimeMillis() - ultimaSenhaErrada < 5_000;
+    }
 
     /** Envia uma ordem para a página do DED+ e espera a resposta (até timeoutMs). */
     public CompletableFuture<JsonNode> enviar(String cmd, Map<String, Object> args, long timeoutMs) {
@@ -98,6 +109,7 @@ public class ConectorExtensao implements AutoCloseable {
     private boolean autorizado(HttpExchange ex) throws IOException {
         String t = ex.getRequestHeaders().getFirst("X-Token");
         if (t == null || !t.equals(token)) {
+            ultimaSenhaErrada = System.currentTimeMillis();
             responder(ex, 403, "{}");
             return false;
         }
@@ -109,13 +121,7 @@ public class ConectorExtensao implements AutoCloseable {
         ultimoContato = System.currentTimeMillis();
         Map<String, String> q = parametros(ex.getRequestURI().getRawQuery());
         if (q.containsKey("url")) urlAtual = q.get("url");
-        // extensão desatualizada (o programa trouxe arquivos novos): manda ela se recarregar uma vez
-        String ext = q.getOrDefault("ext", "");
-        if (!pediuRecarregar && !ext.isEmpty() && !ext.equals(versaoExtensaoEsperada)) {
-            pediuRecarregar = true;
-            responder(ex, 200, "{\"id\":\"-\",\"cmd\":\"__recarregar_extensao\"}");
-            return;
-        }
+        versaoConectada = q.getOrDefault("ext", "");
         Map<String, Object> ordem = fila.poll();
         if (ordem == null) {
             ex.sendResponseHeaders(204, -1);

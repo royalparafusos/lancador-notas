@@ -58,6 +58,9 @@ public interface Ded extends AutoCloseable {
     /** No modo conector: a extensão está conversando com o programa agora? */
     default boolean conectorConectado() { return false; }
 
+    /** No modo conector: mensagem de problema detectado (ou null). */
+    default String problemaConector() { return null; }
+
     @Override
     void close();
 }
