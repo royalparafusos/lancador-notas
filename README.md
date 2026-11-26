@@ -53,7 +53,7 @@ O instalador só precisa ser gerado de novo quando as bibliotecas mudarem; o res
 O professor usa o DED+ no **próprio navegador**, logado como sempre: Chrome ou Edge, sem janela separada. Uma pequena extensão, o **conector**, faz o trabalho dentro da página já aberta e recebe as ordens do programa por `http://127.0.0.1:47321`, que só funciona dentro do computador e é protegido por um token.
 
 - **Por quê:** o navegador próprio que o programa abria passou a ser marcado como robô pelo Seg.ID. Com o conector, quem entra no DED+ é o navegador do dia a dia, do jeito normal.
-- **Instalação (uma vez por computador):** a tela de login do programa mostra o passo a passo. Abra `chrome://extensions` (no Edge, `edge://extensions`), ligue o **Modo do desenvolvedor**, clique em **Carregar sem compactação**, escolha a pasta `~/.lancador-notas-ded/extensao` e aperte F5 no DED+.
+- **Instalação (uma vez por computador):** a tela de login do programa mostra o passo a passo. Abra `chrome://extensions` (no Edge, `edge://extensions`), ligue o **Modo do desenvolvedor**, clique em **Carregar sem compactação**, escolha a pasta `~/.lancador-notas-ded/extensao` e abra o DED+ de novo. **Não recarregue (F5) a tela de login do Seg.ID**: ela perde o caminho de volta e mostra "404 j_security_check". O conector fica parado durante o login.
 - **Atualizações:** a cada versão nova, o programa regrava os arquivos do conector, e o conector se recarrega sozinho.
 - **Código:** `src/main/resources/extensao/` (`manifest.json`, `background.js`, `conteudo.js`) e `ded/ConectorExtensao.java` + `ded/DedExtensao.java`.
 - **Modo antigo** (janela própria, Playwright): `ded.modo=navegador` em `~/.lancador-notas-ded/config.properties`.

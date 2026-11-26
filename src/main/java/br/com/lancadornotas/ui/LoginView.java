@@ -186,7 +186,9 @@ public class LoginView {
               + "b)  Ligue a chave \"Modo do desenvolvedor\".\n"
               + "c)  Clique em \"Carregar sem compactação\" e escolha a pasta\n"
               + "      que o botão abaixo mostra (pasta \"extensao\").\n"
-              + "d)  Volte ao DED+ e aperte F5 para recarregar a página.");
+              + "d)  Feche e abra o DED+ de novo (botão azul acima).\n"
+              + "Atenção: na tela de LOGIN do Seg.ID não aperte F5. Se aparecer\n"
+              + "\"404 j_security_check\", abra o DED+ de novo pelo botão azul.");
         p.setStyle("-fx-font-size: 13px;");
         p.setWrapText(true);
         Button copiar = new Button("Copiar o endereço chrome://extensions");
@@ -213,7 +215,7 @@ public class LoginView {
             boolean ok = ded.conectorConectado();
             if (ok) {
                 status.setStyle("-fx-text-fill: #2e7d32; -fx-font-size: 14px;");
-                status.setText("✓ Conector ativo. Se ainda não entrou, entre no DED+ no navegador.");
+                status.setText("✓ Conector ativo no navegador.");
                 instalar.setVisible(false);
                 instalar.setManaged(false);
             } else {

@@ -554,6 +554,9 @@
 
   let ocupado = false;
   async function ciclo() {
+    // Na tela de LOGIN do Seg.ID o conector fica totalmente quieto (não conversa com o programa).
+    // Só começa a trabalhar na "Seleção de Unidades" ou dentro do DED+.
+    while (location.hostname.includes('ssc.prodemge') && tela() === 'login') await sleep(1500);
     while (true) {
       try {
         if (!ocupado) {
