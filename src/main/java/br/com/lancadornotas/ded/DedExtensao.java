@@ -194,6 +194,7 @@ public class DedExtensao implements Ded {
             for (JsonNode n : r.path("alunos")) alunos.add(new Aluno(n.path("matricula").asText(), n.path("nome").asText()));
             alunosDaTurma = alunos;
             if (!alunos.isEmpty()) log.accept("Visão Geral: " + alunos.size() + " aluno(s).");
+            else salvarHtml("visao-geral-ultima.html", r.path("htmlVisao").asText(""));
             List<String> divs = new ArrayList<>();
             for (JsonNode n : r.path("divisoes")) divs.add(n.asText());
             log.accept("Divisões: " + divs);
@@ -221,9 +222,11 @@ public class DedExtensao implements Ded {
                 return alunosDaTurma;
             }
             List<Aluno> r = new ArrayList<>();
-            for (JsonNode n : ordem("lerAlunosNotas", Map.of("divisao", divisao), 60_000)) {
+            JsonNode res = ordem("lerAlunosNotas", Map.of("divisao", divisao), 60_000);
+            for (JsonNode n : res.path("alunos")) {
                 r.add(new Aluno(n.path("matricula").asText(), n.path("nome").asText()));
             }
+            salvarHtml("notas-ultima.html", res.path("html").asText(""));
             log.accept(r.size() + " aluno(s) lidos na tela de notas.");
             alunosDaTurma = r;
             return r;
@@ -271,6 +274,14 @@ public class DedExtensao implements Ded {
             String linha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM HH:mm:ss")) + "  " + msg + System.lineSeparator();
             Files.writeString(f, linha, java.nio.charset.StandardCharsets.UTF_8,
                     java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception ignored) {}
+    }
+
+    private static void salvarHtml(String nome, String html) {
+        if (html == null || html.isBlank()) return;
+        try {
+            Files.createDirectories(DedClient.pastaCapturas());
+            Files.writeString(DedClient.pastaCapturas().resolve(nome), html);
         } catch (Exception ignored) {}
     }
 

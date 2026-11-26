@@ -92,6 +92,15 @@
       if (lista.some(c => c === e || c.contains(e) || e.contains(c))) continue;
       lista.push(e);
     }
+    // avaliação: o título fica num bloco IRMÃO do "Valor Total/Tipo/Divisão" -> sobe até o cartão inteiro
+    if (tipo === 'avaliacao') {
+      for (let k = 0; k < lista.length; k++) {
+        let e = lista[k];
+        while (e.parentElement && e.parentElement !== document.body
+               && ((e.parentElement.textContent || '').match(/Valor Total/gi) || []).length === 1) e = e.parentElement;
+        lista[k] = e;
+      }
+    }
     lista.forEach((c, i) => c.setAttribute(attr, String(i)));
     return lista;
   }
@@ -224,47 +233,66 @@
   }
 
   // ------------------------------------------------------------------ leituras
+  /** Parece nome de pessoa? (2+ palavras, só letras; aceita minúsculas — o estilo pode pôr em maiúsculas) */
+  const pareceNome = t => /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'. -]{4,}$/.test(t) && t.trim().split(/\s+/).length >= 2
+                          && !/total|alunos|turma|notas|avalia|relat|frequ|google|sala de aula/i.test(t);
+
   function alunosVisaoGeral() {
     const tot = (document.body.innerText.match(/Total de alunos:?\s*(\d+)/i) || [])[1];
+    const alunos = alunosPorMatricula();
+    const total = tot ? Number(tot) : null;
+    return (alunos.length && (!total || alunos.length === total)) ? alunos : [];
+  }
+
+  /** Acha alunos em qualquer tela: cada número de matrícula + o nome que está junto dele. */
+  function alunosPorMatricula() {
     const alunos = []; const vistos = new Set();
-    const ehNome = a => { const t = txt(a); return /^[A-ZÀ-Ý][A-ZÀ-Ý'. -]{4,}$/.test(t) && t.includes(' '); };
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let n;
     while ((n = w.nextNode())) {
       const mat = n.textContent.trim();
       if (!/^\d{6,10}$/.test(mat) || vistos.has(mat)) continue;
-      let e = n.parentElement, link = null;
-      for (let i = 0; i < 4 && e && e !== document.body; i++, e = e.parentElement) {
-        const nomes = [...e.querySelectorAll('a')].filter(ehNome);
-        if (nomes.length === 1) { link = nomes[0]; break; }
-        if (nomes.length > 1) break;
+      // sobe até o bloco do aluno: o menor bloco com UM texto que parece nome
+      let e = n.parentElement, nome = null;
+      for (let i = 0; i < 5 && e && e !== document.body; i++, e = e.parentElement) {
+        const nomes = [...e.querySelectorAll('*')].filter(x => ![...x.children].some(c => (c.textContent || '').trim())
+                        && pareceNome(txt(x)));
+        const unicos = [...new Set(nomes.map(x => txt(x)))];
+        if (unicos.length === 1) { nome = nomes[0]; break; }
+        if (unicos.length > 1) break;
       }
-      if (!link) continue;
+      if (!nome) continue;
       vistos.add(mat);
-      alunos.push({ matricula: mat, nome: txt(link).replace(/\s+/g, ' ') });
+      alunos.push({ matricula: mat, nome: (nome.innerText || txt(nome)).trim().replace(/\s+/g, ' ').toUpperCase() });
     }
-    const total = tot ? Number(tot) : null;
-    return (alunos.length && (!total || alunos.length === total)) ? alunos : [];
+    return alunos;
   }
 
-  /** Título da avaliação: primeiro texto em MAIÚSCULAS do cartão (ignora ícones e "Nota registrada"). */
+  /**
+   * Título da avaliação: no DED+ é um texto sublinhado/clicável no topo do cartão
+   * (no código vem "Produção do trabalho"; a tela mostra em MAIÚSCULAS pelo estilo).
+   */
+  const RE_NAO_TITULO = /copiar|excluir|editar|nota (pendente|registrada)|valor total|tipo:|divis/i;
   function tituloDoCartao(card) {
-    const w = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
-    let n;
-    while ((n = w.nextNode())) {
-      const t = n.textContent.trim();
-      const pai = n.parentElement;
-      if (pai && /^(MAT-ICON|I)$/.test(pai.tagName)) continue; // ícones (ex.: "edit")
-      if (t.length >= 3 && t === t.toUpperCase() && /[A-ZÀ-Ý]/.test(t) && !/^NOTA REGISTRADA$/i.test(t)) return pai;
-    }
-    return null;
+    const folhas = [...card.querySelectorAll('*')].filter(e =>
+      ![...e.children].some(c => (c.textContent || '').trim()) && txt(e).length >= 3
+      && !RE_NAO_TITULO.test(txt(e)) && !/^(MAT-ICON|I|SVG|PATH)$/i.test(e.tagName) && !e.closest('.v-chip, mat-chip, [class*=chip]'));
+    const clicavel = folhas.find(e => {
+      for (let p = e; p && p !== card; p = p.parentElement) {
+        const st = getComputedStyle(p);
+        if (st.cursor === 'pointer' || /underline/.test(st.textDecorationLine || '') || p.tagName === 'A'
+            || /cursor-pointer|text-decoration-underline/.test(p.className || '')) return true;
+      }
+      return false;
+    });
+    return clicavel || folhas[0] || null;
   }
 
   function avaliacoes() {
     return cartoes('avaliacao').map((c, i) => {
       const texto = c.innerText.trim();
       const t = tituloDoCartao(c);
-      const nome = t ? txt(t) : texto.split('\n')[0];
+      const nome = t ? (t.innerText || txt(t)) : texto.split('\n')[0];
       const m = texto.match(/Valor Total:?\s*([\d.,]+)/);
       return { indice: i, nome: nome.replace(/\s+/g, ' ').trim(), valor: m ? numero(m[1]) : null };
     });
@@ -278,7 +306,7 @@
       const mat = (t.match(/\b\d{6,10}\b/) || [''])[0];
       const link = c.querySelector('a');
       const linhas = t.split('\n').map(s => s.trim()).filter(Boolean);
-      const nome = (link ? link.innerText : (linhas.find(l => /^[A-ZÀ-Ý][A-ZÀ-Ý'. -]{5,}$/.test(l)) || '')).trim();
+      const nome = (link && pareceNome(txt(link)) ? link.innerText : (linhas.find(l => pareceNome(l)) || '')).trim().toUpperCase();
       const campos = [...c.querySelectorAll('input')].filter(x => !['hidden', 'radio', 'checkbox'].includes(x.type));
       let rotulo = null;
       const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
@@ -342,9 +370,11 @@
     }
     [...card.querySelectorAll('a')].filter(a => !proibido(a) && txt(a).length > 2).forEach(add);
     add(card);
+    const antes = location.href;
     for (const a of alvos) {
       clicar(a);
-      if (await esperar(() => tela() === 'notas' && cartoes('aluno').length, 7000)) return;
+      const abriu = await esperar(() => cartoes('aluno').length || (location.href !== antes && alunosPorMatricula().length), 7000);
+      if (abriu) { await sleep(600); return; }
     }
     throw new Error('Não consegui abrir a tela de lançar notas de "' + nome + '".');
   }
@@ -447,15 +477,17 @@
       const t = await esperar(() => ['visao', 'avaliacoes'].includes(tela()) ? tela() : null, 15000);
       if (!t) throw new Error('A turma não abriu.');
       let alunos = [];
+      let htmlVisao = null;
       if (t === 'visao') {
         await esperar(() => /Total de alunos/i.test(document.body.innerText), 5000);
         alunos = alunosVisaoGeral();
+        if (!alunos.length) htmlVisao = document.documentElement.outerHTML;
         progresso('Entrando em Avaliações...');
         await entrarEmAvaliacoes();
       }
       await esperar(() => acharDivisao().atual || cartoes('avaliacao').length, 8000);
       const div = await lerDivisoes();
-      return { alunos, divisoes: div.opcoes };
+      return { alunos, divisoes: div.opcoes, htmlVisao };
     },
 
     async listarAvaliacoes({ divisao }) {
@@ -470,9 +502,11 @@
       const lista = avaliacoes();
       if (!lista.length) return [];
       await abrirAvaliacao(lista[0].nome);
-      const alunos = lerAlunosNaTela().map(a => ({ matricula: a.matricula, nome: a.nome }));
+      let alunos = lerAlunosNaTela().map(a => ({ matricula: a.matricula, nome: a.nome })).filter(a => a.nome);
+      if (!alunos.length) alunos = alunosPorMatricula();
+      const html = document.documentElement.outerHTML; // diagnóstico (o programa guarda em capturas/)
       await voltarParaAvaliacoes(divisao);
-      return alunos;
+      return { alunos, html };
     },
 
     /** notas: { matrícula: "8,5" | "NR" } */
@@ -550,7 +584,7 @@
   };
 
   // ------------------------------------------------------------------ laço: busca ordens no programa
-  window.__lndTeste = { ORDENS, tela, cartoes, irInicio }; // usado só nos testes automáticos
+  window.__lndTeste = { ORDENS, tela, cartoes, irInicio, avaliacoes, tituloDoCartao, alunosVisaoGeral, lerAlunosNaTela }; // usado só nos testes automáticos
 
   let ocupado = false;
   async function ciclo() {

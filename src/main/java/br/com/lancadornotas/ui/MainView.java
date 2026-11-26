@@ -60,7 +60,7 @@ public class MainView {
     private final Button btFoto = new Button("1. Escolher foto da folha");
     private final Button btLer = new Button("2. Ler folha");
     private final Button btLancar = new Button("4. Lançar no DED+");
-    private final MenuButton btFolha = new MenuButton("Folha para impressão");
+    private final MenuButton btFolha = new MenuButton("🖨 Imprimir lista da turma");
     private final FlowPane painelColunas = new FlowPane(14, 6);
     private final TableView<LinhaNota> tabela = new TableView<>();
     private final ObservableList<LinhaNota> linhas = FXCollections.observableArrayList();
@@ -107,10 +107,10 @@ public class MainView {
         turma.setOnAction(e -> aoEscolherTurma());
         divisao.setOnAction(e -> aoEscolherDivisao());
 
-        MenuItem fTurma = new MenuItem("Desta turma (nomes e avaliações do DED+)");
+        MenuItem fTurma = new MenuItem("Lista desta turma — nomes e avaliações do DED+");
         fTurma.setOnAction(e -> gerarFolha(false));
         fTurma.disableProperty().bind(javafx.beans.binding.Bindings.isEmpty(alunos));
-        MenuItem fBranco = new MenuItem("Em branco");
+        MenuItem fBranco = new MenuItem("Lista em branco (escrever os nomes à mão)");
         fBranco.setOnAction(e -> gerarFolha(true));
         btFolha.getItems().addAll(fTurma, fBranco);
 
@@ -361,6 +361,10 @@ public class MainView {
                    a.show();
                }
                log(avaliacoes.size() + " avaliação(ões): " + avaliacoes.stream().map(Avaliacao::nome).toList());
+               if (!lista.isEmpty()) {
+                   log("✓ " + lista.size() + " aluno(s) do DED+. Para imprimir a lista com os nomes e as avaliações: "
+                       + "botão \"🖨 Imprimir lista da turma\".");
+               }
                if (avaliacoes.isEmpty()) {
                    log("⚠ Esta divisão não tem avaliações cadastradas. Cadastre no DED+ primeiro (botão \"Cadastrar avaliação\").");
                }

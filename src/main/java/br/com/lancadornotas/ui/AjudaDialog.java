@@ -10,7 +10,7 @@ public class AjudaDialog extends Dialog<Void> {
 
     private static final String[][] PASSOS = {
         {"Escolha a turma e o trimestre", "Nos campos \"Turma\" e \"Divisão\", lá em cima."},
-        {"Folha para impressão (opcional)", "Imprime uma folha com os nomes dos alunos. Você só escreve as notas."},
+        {"Imprimir lista da turma (opcional)", "Imprime a lista com os nomes dos alunos e as avaliações, tirados do DED+. Você só escreve as notas."},
         {"Tire a foto da folha", "Com o celular, de cima, com boa luz, pegando a folha inteira. Passe a foto para o computador."},
         {"Clique em \"1. Escolher foto da folha\"", "Escolha a foto que você passou para o computador."},
         {"Clique em \"2. Ler folha\"", "Espere de 10 a 40 segundos. As notas aparecem na tabela."},
