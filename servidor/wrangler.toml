@@ -1,0 +1,16 @@
+name = "lancador-notas"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# Banco de licenças. O id é criado com:  npx wrangler kv namespace create LICENCAS
+[[kv_namespaces]]
+binding = "LICENCAS"
+id = "COLOQUE_AQUI_O_ID_DO_KV"
+
+[vars]
+PRECO_MENSAL = "19.90"
+PRECO_ANUAL = "149.90"
+# quantos computadores cada e-mail pode usar
+MAX_COMPUTADORES = "2"
+# e-mails liberados sem pagar (separados por vírgula), ex.: o seu
+EMAILS_LIVRES = ""

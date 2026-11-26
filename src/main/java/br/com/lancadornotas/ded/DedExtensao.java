@@ -37,6 +37,20 @@ public class DedExtensao implements Ded {
 
     @Override public boolean usaExtensao() { return true; }
     @Override public boolean conectorConectado() { return conector.conectado(); }
+    @Override
+    public CompletableFuture<String> emailDoDed() {
+        return tarefa(() -> {
+            JsonNode r = ordem("identidade", Map.of(), 15_000);
+            String email = r.path("email").asText("");
+            if (email.isBlank()) {
+                gravarRegistro("E-mail do DED+ não encontrado. Campos: " + r.path("campos") + " APIs: " + r.path("apis"));
+                return null;
+            }
+            gravarRegistro("E-mail do DED+ lido de: " + r.path("fonte").asText());
+            return email.trim().toLowerCase();
+        });
+    }
+
     @Override public String problemaConector() {
         if (conector.desatualizado() && conector.viaLoja()) {
             return "O conector do navegador está na versão " + conector.versaoConectada() + " e o programa precisa da "

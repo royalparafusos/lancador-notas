@@ -123,6 +123,12 @@ public final class Config {
         salvar();
     }
 
+    /** Servidor de licenças (vazio = usa o padrão do programa). Pode vir do config-padrao.properties. */
+    public static String servidorLicenca() {
+        String v = props.getProperty("licenca.servidor", "").trim();
+        return v.isEmpty() ? padrao.getProperty("licenca.servidor", "").trim() : v;
+    }
+
     public static String modeloGroq() {
         return props.getProperty("ia.groq.modelo", "qwen/qwen3.8-27b");
     }

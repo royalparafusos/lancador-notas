@@ -604,6 +604,52 @@
       return res;
     },
 
+    /**
+     * E-mail do professor logado no DED+ (usado só para a licença do programa).
+     * Procura no "crachá" do login guardado pelo navegador (token JWT / dados do usuário) e na tela.
+     * Não devolve tokens nem senhas: só o e-mail e, para diagnóstico, os NOMES dos campos olhados.
+     */
+    async identidade() {
+      const RE_EMAIL = /^[^\s@"']+@[^\s@"']+\.[^\s@"']+$/;
+      const achados = []; const campos = [];
+      const decodificarJwt = t => {
+        try { return JSON.parse(decodeURIComponent(escape(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))))); }
+        catch (e) { return null; }
+      };
+      const olhar = (obj, onde, prof = 0) => {
+        if (!obj || prof > 6) return;
+        if (typeof obj === 'string') {
+          for (const jwt of obj.match(/[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g) || []) {
+            const d = decodificarJwt(jwt); if (d) { campos.push(onde + ' (jwt: ' + Object.keys(d).join(',') + ')'); olhar(d, onde + '>jwt', prof + 1); }
+          }
+          if (/^[\[{]/.test(obj.trim())) { try { olhar(JSON.parse(obj), onde, prof + 1); } catch (e) { /* não é JSON */ } }
+          return;
+        }
+        if (typeof obj !== 'object') return;
+        for (const [k, v] of Object.entries(obj)) {
+          if (typeof v === 'string' && RE_EMAIL.test(v.trim())) {
+            const peso = /^e-?mail$/i.test(k) ? 3 : /mail/i.test(k) ? 2 : /user(name)?|login|upn|preferred/i.test(k) ? 1 : 0;
+            achados.push({ email: v.trim().toLowerCase(), peso, onde: onde + '.' + k });
+          } else olhar(v, onde + '.' + k, prof + 1);
+        }
+      };
+      for (const [nome, st] of [['localStorage', localStorage], ['sessionStorage', sessionStorage]]) {
+        try { for (let i = 0; i < st.length; i++) { const k = st.key(i); campos.push(nome + ':' + k); olhar(st.getItem(k), nome + ':' + k); } }
+        catch (e) { /* sem acesso */ }
+      }
+      try { document.cookie.split(';').forEach(c => { const [k, ...v] = c.split('='); if (k) { campos.push('cookie:' + k.trim()); olhar(decodeURIComponent(v.join('=')), 'cookie:' + k.trim()); } }); }
+      catch (e) { /* sem cookies */ }
+      // na tela (menu do usuário / perfil)
+      const naTela = (document.body.innerText.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map(e => e.toLowerCase());
+      naTela.forEach(e => achados.push({ email: e, peso: 0, onde: 'tela' }));
+      achados.sort((a, b) => b.peso - a.peso);
+      const melhor = achados[0] || null;
+      return { email: melhor ? melhor.email : null, fonte: melhor ? melhor.onde : null,
+               nomeTela: escola(), campos: campos.slice(0, 60),
+               apis: [...new Set(performance.getEntriesByType('resource').map(e => { try { return new URL(e.name).origin + new URL(e.name).pathname; } catch (x) { return ''; } })
+                       .filter(u => /dedmais|prodemge/i.test(u) && !/\.(js|css|png|svg|woff2?|ico|jpg)$/i.test(u)))].slice(0, 40) };
+    },
+
     /** Código da página (sem senhas), para diagnóstico. */
     async pagina() {
       document.querySelectorAll('input[type=password]').forEach(i => { i.value = ''; });

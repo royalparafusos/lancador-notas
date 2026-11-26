@@ -61,6 +61,9 @@ public interface Ded extends AutoCloseable {
     /** No modo conector: mensagem de problema detectado (ou null). */
     default String problemaConector() { return null; }
 
+    /** E-mail do professor logado no DED+ (para a licença). null se não der para ler. */
+    default CompletableFuture<String> emailDoDed() { return CompletableFuture.completedFuture(null); }
+
     @Override
     void close();
 }

@@ -35,8 +35,12 @@ public class LeitorFolhaGroq implements LeitorFolha {
 
     @Override
     public LeituraFolha ler(Path foto, List<String> nomesDaTurma) throws Exception {
-        String chave = Config.chaveGroq();
-        if (chave.isBlank()) {
+        boolean pelaLicenca = br.com.lancadornotas.licenca.Licenca.ligada();
+        String chave = pelaLicenca ? "" : Config.chaveGroq();
+        if (pelaLicenca && br.com.lancadornotas.licenca.Licenca.comprovanteAtual() == null) {
+            throw new IllegalStateException("A leitura das fotos precisa da assinatura ativa. Clique em \"Assinatura\".");
+        }
+        if (!pelaLicenca && chave.isBlank()) {
             throw new IllegalStateException("O programa ainda não tem a chave de leitura de fotos. "
                     + "Peça a quem instalou o programa para configurar (botão Configurações).");
         }
@@ -57,6 +61,9 @@ public class LeitorFolhaGroq implements LeitorFolha {
                         + "(ele volta amanhã).");
             }
         }
+        if (resp.statusCode() == 402 || resp.statusCode() == 403) {
+            throw new IllegalStateException(erroDoServidor(resp.body(), "A assinatura não está ativa. Clique em \"Assinatura\"."));
+        }
         if (resp.statusCode() == 401) {
             throw new IllegalStateException("A chave do Groq não foi aceita. Confira em Configurações.");
         }
@@ -66,10 +73,23 @@ public class LeitorFolhaGroq implements LeitorFolha {
         return interpretar(resp.body());
     }
 
+    private String erroDoServidor(String corpo, String padrao) {
+        try { return json.readTree(corpo).path("erro").asText(padrao); } catch (Exception e) { return padrao; }
+    }
+
     private HttpResponse<String> enviar(String chave, String corpo) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(URL))
-                .timeout(Duration.ofSeconds(120))
-                .header("Authorization", "Bearer " + chave)
+        boolean pelaLicenca = br.com.lancadornotas.licenca.Licenca.ligada();
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(
+                        pelaLicenca ? br.com.lancadornotas.licenca.Licenca.servidor() + "/ocr" : URL))
+                .timeout(Duration.ofSeconds(120));
+        if (pelaLicenca) {
+            // a chave do Groq fica no servidor; o programa manda o comprovante da assinatura
+            b.header("X-Licenca", String.valueOf(br.com.lancadornotas.licenca.Licenca.comprovanteAtual()))
+             .header("X-Maquina", br.com.lancadornotas.licenca.Licenca.maquina());
+        } else {
+            b.header("Authorization", "Bearer " + chave);
+        }
+        HttpRequest req = b
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(corpo))
                 .build();

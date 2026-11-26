@@ -17,6 +17,7 @@ public interface LeitorFolha {
 
     /** Escolhe o motor: Groq se houver chave do Groq; senão Claude se houver chave da Anthropic; senão Groq (vai pedir a chave). */
     static LeitorFolha criar() {
+        if (br.com.lancadornotas.licenca.Licenca.ligada()) return new LeitorFolhaGroq(); // leitura pelo servidor
         if (!Config.chaveGroq().isBlank()) return new LeitorFolhaGroq();
         if (!Config.chaveApiIA().isBlank()) return new LeitorFolhaClaude();
         return new LeitorFolhaGroq();

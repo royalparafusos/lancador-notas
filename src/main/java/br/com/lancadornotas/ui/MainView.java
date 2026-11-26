@@ -8,6 +8,7 @@ import br.com.lancadornotas.model.LinhaNota.Status;
 import br.com.lancadornotas.ocr.LeitorFolha;
 import br.com.lancadornotas.util.ComparadorNomes;
 import br.com.lancadornotas.util.FolhaModelo;
+import br.com.lancadornotas.licenca.Licenca;
 import javafx.application.HostServices;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleObjectProperty;
@@ -84,6 +85,58 @@ public class MainView {
         this.host = host;
         this.escola = escola;
         montar();
+        verificarAssinatura(null);
+    }
+
+    // ================================================================== assinatura
+
+    private final Label lbAssinatura = new Label("Assinatura: conferindo...");
+    private final Button btAssinatura = new Button("💳 Assinatura");
+    private volatile String emailDed = null;
+
+    /** Lê o e-mail do DED+ e confere a licença; depois roda 'depois' (se houver) na tela. */
+    private void verificarAssinatura(Runnable depois) {
+        if (!Licenca.ligada()) { if (depois != null) depois.run(); return; }
+        CompletableFuture<String> email = emailDed != null ? CompletableFuture.completedFuture(emailDed) : ded.emailDoDed();
+        email.exceptionally(ex -> null)
+             .thenApply(em -> { if (em != null) emailDed = em; return Licenca.consultar(emailDed); })
+             .thenAccept(est -> Platform.runLater(() -> { atualizarAssinatura(est); if (depois != null) depois.run(); }));
+    }
+
+    private void atualizarAssinatura(Licenca.Estado e) {
+        if (e == null) return;
+        if (e.ativo()) {
+            lbAssinatura.setText("✓ Assinatura ativa até " + AssinaturaDialog.DATA.format(java.time.Instant.ofEpochMilli(e.validoAte()))
+                    + (e.offline() ? " (sem internet)" : ""));
+            lbAssinatura.setStyle("-fx-font-weight: bold; -fx-text-fill: #2e7d32;");
+            btAssinatura.setText("💳 Assinatura");
+        } else {
+            lbAssinatura.setText(e.email() == null ? "Assinatura: e-mail do DED+ não lido" : "Sem assinatura ativa");
+            lbAssinatura.setStyle("-fx-font-weight: bold; -fx-text-fill: #b71c1c;");
+            btAssinatura.setText("💳 Assinar agora");
+        }
+    }
+
+    private void abrirAssinatura() {
+        if (emailDed == null) {
+            log("Lendo o seu e-mail do DED+...");
+            verificarAssinatura(() -> new AssinaturaDialog(stage, host, emailDed, this::atualizarAssinatura).mostrar());
+            return;
+        }
+        new AssinaturaDialog(stage, host, emailDed, this::atualizarAssinatura).mostrar();
+    }
+
+    /** Ler a folha e lançar precisam de assinatura ativa. */
+    private boolean exigirAssinatura(Runnable acao) {
+        if (Licenca.ativa()) return true;
+        verificarAssinatura(() -> {
+            if (Licenca.ativa()) acao.run();
+            else {
+                log("Para ler as folhas e lançar no DED+, é preciso ter a assinatura ativa.");
+                abrirAssinatura();
+            }
+        });
+        return false;
     }
 
     public Parent getRoot() { return root; }
@@ -95,7 +148,12 @@ public class MainView {
         escolaLabel.setStyle("-fx-font-weight: bold;");
         Button btTrocar = new Button("Trocar escola");
         btTrocar.setOnAction(e -> trocarEscola());
-        HBox linhaEscola = new HBox(10, new Label("Escola:"), escolaLabel, btTrocar);
+        Region espEscola = new Region();
+        HBox.setHgrow(espEscola, Priority.ALWAYS);
+        lbAssinatura.setStyle("-fx-font-weight: bold;");
+        btAssinatura.setOnAction(e -> abrirAssinatura());
+        HBox linhaEscola = new HBox(10, new Label("Escola:"), escolaLabel, btTrocar, espEscola, lbAssinatura, btAssinatura);
+        if (!Licenca.ligada()) { lbAssinatura.setVisible(false); btAssinatura.setVisible(false); }
         linhaEscola.setAlignment(Pos.CENTER_LEFT);
 
         turma.setPromptText("Escolha a turma");
@@ -447,6 +505,7 @@ public class MainView {
 
     private void lerFolha() {
         if (fotoAtual == null) return;
+        if (!exigirAssinatura(this::lerFolha)) return;
         setOcupado(true);
         log("Lendo a folha (10 a 40 segundos)...");
         List<String> nomes = alunos.stream().map(Aluno::nome).toList();
@@ -685,6 +744,7 @@ public class MainView {
     // ================================================================== lançamento
 
     private void lancar() {
+        if (!exigirAssinatura(this::lancar)) return;
         List<LinhaNota> prontos = linhas.stream().filter(l -> l.getStatus() == Status.PRONTO).toList();
         String div = divisao.getValue();
 
