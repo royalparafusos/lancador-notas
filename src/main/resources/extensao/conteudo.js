@@ -57,7 +57,8 @@
     }
     if (!h.includes('dedmais')) return 'outra';
     if (p.includes('avaliacao-detalhe')) return 'notas';
-    if (p.includes('/avaliacao')) return 'avaliacoes';
+    // no DED+ a lista de avaliações e a tela de lançar notas têm o MESMO endereço (/avaliacao)
+    if (p.includes('/avaliacao')) return /lan[cç]ar notas/i.test(corpo) || /N[aã]o realizada/i.test(corpo) ? 'notas' : 'avaliacoes';
     if (/vis[aã]o geral da turma/i.test(corpo)) return 'visao';
     if (p === '' || p === '/home' || p === '/inicio') return 'inicio';
     return 'outra';
@@ -148,7 +149,7 @@
 
   async function garantirAvaliacoes() {
     if (tela() === 'avaliacoes') return;
-    if (tela() === 'notas') { history.back(); await esperar(() => tela() === 'avaliacoes', 8000); }
+    if (tela() === 'notas') { try { await voltarParaAvaliacoes(null); } catch (e) { /* abaixo */ } }
     if (tela() !== 'avaliacoes') throw new Error('Escolha a turma de novo (o DED+ saiu da tela de avaliações).');
   }
 
@@ -313,8 +314,8 @@
       let rotulo = null;
       const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
       let n; while ((n = w.nextNode())) { if (reNota.test(n.textContent)) { rotulo = n; break; } }
-      let campo = campos[0];
-      if (rotulo) {
+      let campo = c.querySelector('input.nota') || campos[0];
+      if (rotulo && !c.querySelector('input.nota')) {
         const depois = campos.find(x => rotulo.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING);
         if (depois) campo = depois;
       }
@@ -382,8 +383,13 @@
   }
 
   async function voltarParaAvaliacoes(divisao) {
-    history.back();
-    if (!await esperar(() => tela() === 'avaliacoes', 8000)) throw new Error('Não consegui voltar para Avaliações.');
+    if (tela() === 'notas') {
+      const bt = [...document.querySelectorAll('button, a, [role=button]')]
+        .find(e => /^\s*voltar\s*$/i.test(e.innerText || '') && visivel(e));
+      if (bt) clicar(bt); else history.back();
+      if (!await esperar(() => tela() === 'avaliacoes', 8000)) { history.back(); await esperar(() => tela() === 'avaliacoes', 8000); }
+    }
+    if (tela() !== 'avaliacoes') throw new Error('Não consegui voltar para Avaliações.');
     if (divisao) await selecionarDivisao(divisao);
     await esperar(() => cartoes('avaliacao').length, 8000);
   }
@@ -395,6 +401,21 @@
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   async function digitar(campo, valorFmt) {
+    if (campo.type === 'number') {
+      const v = String(numero(valorFmt));               // 8 ; 7.5  (campo numérico não aceita vírgula)
+      campo.focus();
+      setValor(campo, '');
+      setValor(campo, v);
+      campo.dispatchEvent(new Event('change', { bubbles: true }));
+      for (const t of ['keydown', 'keypress', 'keyup']) {
+        campo.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      }
+      if (campo.form) campo.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      campo.dispatchEvent(new Event('blur', { bubbles: true }));
+      campo.blur();
+      await sleep(80);
+      return iguais(campo.value, v) ? null : 'o campo não aceitou ' + valorFmt + ' (ficou "' + campo.value + '")';
+    }
     campo.focus();
     setValor(campo, '');
     setValor(campo, valorFmt);
@@ -551,12 +572,17 @@
         return res;
       }
 
-      const salvar = [...document.querySelectorAll('button, [role=button], a')]
-        .find(e => /\bsalvar\b/i.test(e.textContent || '') && visivel(e));
-      if (!salvar) throw new Error('Não achei o botão "Salvar".');
       progresso('Salvando no DED+...');
-      clicar(salvar);
-      await sleep(1500);
+      const naoSalvo = () => /ainda n[aã]o foram salvas/i.test(document.body.innerText);
+      const botaoSalvar = () => [...document.querySelectorAll('button, [role=button], a')]
+        .find(e => /\b(salvar|gravar|registrar)\b/i.test(e.innerText || '') && visivel(e) && !e.disabled);
+      // o DED+ salva sozinho ou mostra um botão Salvar quando tudo está válido
+      const sinal = await esperar(() => botaoSalvar() || (!naoSalvo() && 'ok'), 6000);
+      if (sinal && sinal !== 'ok') { clicar(sinal); await sleep(800); }
+      await esperar(() => !naoSalvo(), 15000);
+      const erroCampo = [...document.querySelectorAll('.text-errorText, .text-error')].map(e => txt(e)).find(Boolean);
+      if (naoSalvo()) throw new Error('O DED+ não salvou as notas' + (erroCampo ? ': ' + erroCampo : '.') + ' Confira a tela do DED+.');
+      await sleep(800);
 
       // Conferência: sai e entra de novo na avaliação (o DED+ busca do servidor) e compara.
       progresso('Conferindo o que o DED+ gravou...');
@@ -586,7 +612,7 @@
   };
 
   // ------------------------------------------------------------------ laço: busca ordens no programa
-  window.__lndTeste = { ORDENS, tela, cartoes, irInicio, avaliacoes, tituloDoCartao, alunosVisaoGeral, lerAlunosNaTela }; // usado só nos testes automáticos
+  window.__lndTeste = { ORDENS, tela, cartoes, irInicio, avaliacoes, tituloDoCartao, alunosVisaoGeral, lerAlunosNaTela, digitar }; // usado só nos testes automáticos
 
   let ocupado = false;
   async function ciclo() {
