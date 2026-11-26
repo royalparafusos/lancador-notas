@@ -1,8 +1,8 @@
 package br.com.lancadornotas.ui;
 
 import br.com.lancadornotas.Config;
-import br.com.lancadornotas.ded.DedClient;
-import br.com.lancadornotas.ded.DedClient.ResultadoAluno;
+import br.com.lancadornotas.ded.Ded;
+import br.com.lancadornotas.ded.Ded.ResultadoAluno;
 import br.com.lancadornotas.model.*;
 import br.com.lancadornotas.model.LinhaNota.Status;
 import br.com.lancadornotas.ocr.LeitorFolha;
@@ -48,7 +48,7 @@ public class MainView {
     private static final Pattern ATV_N = Pattern.compile("(?i)\\b(?:atv|ativ\\w*|atividade)\\s*\\.?\\s*(\\d+)");
 
     private final BorderPane root = new BorderPane();
-    private final DedClient ded;
+    private final Ded ded;
     private final Stage stage;
     private final HostServices host;
 
@@ -78,7 +78,7 @@ public class MainView {
     private boolean ocupado;
     private boolean trocandoTurma;
 
-    public MainView(DedClient ded, Stage stage, HostServices host, String escola) {
+    public MainView(Ded ded, Stage stage, HostServices host, String escola) {
         this.ded = ded;
         this.stage = stage;
         this.host = host;
@@ -127,7 +127,8 @@ public class MainView {
         Region esp = new Region();
         HBox.setHgrow(esp, Priority.ALWAYS);
         HBox linhaTurma = new HBox(10, new Label("Turma:"), turma, new Label("Divisão:"), divisao, esp,
-                btFolha, btAjuda, btConfig, btCalibrar);
+                btFolha, btAjuda, btConfig);
+        if (!ded.usaExtensao()) linhaTurma.getChildren().add(btCalibrar);
         linhaTurma.setAlignment(Pos.CENTER_LEFT);
         VBox topo = new VBox(8, linhaEscola, linhaTurma);
         topo.setPadding(new Insets(10));

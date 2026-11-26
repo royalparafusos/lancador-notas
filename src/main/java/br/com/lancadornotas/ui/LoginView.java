@@ -1,7 +1,14 @@
 package br.com.lancadornotas.ui;
 
 import br.com.lancadornotas.Config;
-import br.com.lancadornotas.ded.DedClient;
+import br.com.lancadornotas.ded.Ded;
+import br.com.lancadornotas.ded.ExtensaoArquivos;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.application.HostServices;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.util.Duration;
 import br.com.lancadornotas.model.Escola;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -38,14 +45,16 @@ public class LoginView {
     private final Button entrarEscola = new Button("Entrar na escola");
     private final Label statusEscola = new Label();
 
-    private final DedClient ded;
+    private final Ded ded;
+    private final HostServices host;
     private final Consumer<String> aoEntrar;
 
     /** @param aoEntrar recebe o texto da escola (ex.: "082716 - EE PROFESSORA DORA BARBOSA - SRE MONTES CLAROS") */
-    public LoginView(DedClient ded, Consumer<String> aoEntrar) {
+    public LoginView(Ded ded, HostServices host, Consumer<String> aoEntrar) {
         this.ded = ded;
+        this.host = host;
         this.aoEntrar = aoEntrar;
-        montarLogin();
+        if (ded.usaExtensao()) montarLoginConector(); else montarLogin();
         montarEscola();
         root.getChildren().addAll(passoEscola, passoLogin);
         passoEscola.setVisible(false);
@@ -127,6 +136,103 @@ public class LoginView {
                 Throwable causa = ex.getCause() != null ? ex.getCause() : ex;
                 erro(status, causa.getMessage());
                 abrir.setText("Tentar de novo");
+                return;
+            }
+            if (r.precisaEscolherEscola()) mostrarEscolas(r.escolas());
+            else aoEntrar.accept(r.escolaAtual());
+        }));
+    }
+
+    // ------------------------------------------------------------------ passo 1 (modo conector)
+
+    private final VBox instalar = new VBox(8);
+    private Timeline vigia;
+
+    /**
+     * Modo conector: o professor entra no DED+ no PRÓPRIO navegador. O programa só espera a extensão
+     * avisar que o DED+ está aberto e logado. Se a extensão não aparecer, mostra como instalar.
+     */
+    private void montarLoginConector() {
+        passoLogin.setPadding(new Insets(24));
+        passoLogin.setAlignment(Pos.TOP_LEFT);
+
+        Label titulo = new Label("Lançador de Notas");
+        titulo.setFont(Font.font("System", FontWeight.BOLD, 26));
+        Label passos = new Label(
+                "1.  Abra o DED+ no seu navegador (Chrome ou Edge)\n"
+              + "     e entre como você sempre faz.\n\n"
+              + "2.  Pronto! Com o DED+ aberto, o programa se conecta sozinho.");
+        passos.setStyle("-fx-font-size: 15px;");
+        passos.setWrapText(true);
+
+        abrir.setText("Abrir o DED+ no navegador");
+        abrir.setMaxWidth(Double.MAX_VALUE);
+        abrir.setPrefHeight(46);
+        abrir.getStyleClass().add("botao-principal");
+        abrir.setOnAction(e -> host.showDocument(br.com.lancadornotas.Config.urlDed()));
+
+        status.setWrapText(true);
+        status.setStyle("-fx-font-size: 14px;");
+        carregando.setPrefSize(28, 28);
+        carregando.setVisible(true);
+
+        // ---- instalação do conector (aparece se a extensão não for encontrada)
+        Label t = new Label("Primeira vez neste computador? Instale o conector (1 minuto):");
+        t.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+        t.setWrapText(true);
+        Label p = new Label(
+                "a)  No navegador, abra o endereço  chrome://extensions\n"
+              + "      (no Edge:  edge://extensions)\n"
+              + "b)  Ligue a chave \"Modo do desenvolvedor\".\n"
+              + "c)  Clique em \"Carregar sem compactação\" e escolha a pasta\n"
+              + "      que o botão abaixo mostra (pasta \"extensao\").\n"
+              + "d)  Volte ao DED+ e aperte F5 para recarregar a página.");
+        p.setStyle("-fx-font-size: 13px;");
+        p.setWrapText(true);
+        Button copiar = new Button("Copiar o endereço chrome://extensions");
+        copiar.setOnAction(e -> {
+            ClipboardContent c = new ClipboardContent();
+            c.putString("chrome://extensions");
+            Clipboard.getSystemClipboard().setContent(c);
+            copiar.setText("Copiado! Cole na barra de endereço do navegador");
+        });
+        Button pasta = new Button("Abrir a pasta do conector");
+        pasta.setOnAction(e -> host.showDocument(ExtensaoArquivos.PASTA.toUri().toString()));
+        Label caminho = new Label(ExtensaoArquivos.PASTA.toString());
+        caminho.setStyle("-fx-font-size: 11px; -fx-text-fill: #555;");
+        caminho.setWrapText(true);
+        instalar.getChildren().addAll(new Separator(), t, p, copiar, pasta, caminho);
+        instalar.setVisible(false);
+        instalar.setManaged(false);
+
+        passoLogin.getChildren().addAll(titulo, passos, abrir, carregando, status, instalar);
+
+        // vigia: atualiza a mensagem e mostra a instalação se a extensão não aparecer
+        final long inicio = System.currentTimeMillis();
+        vigia = new Timeline(new KeyFrame(Duration.seconds(1), ev -> {
+            boolean ok = ded.conectorConectado();
+            if (ok) {
+                status.setStyle("-fx-text-fill: #2e7d32; -fx-font-size: 14px;");
+                status.setText("✓ Conector ativo. Se ainda não entrou, entre no DED+ no navegador.");
+                instalar.setVisible(false);
+                instalar.setManaged(false);
+            } else {
+                status.setStyle("-fx-text-fill: #333; -fx-font-size: 14px;");
+                status.setText("Esperando o DED+ aberto no navegador...");
+                if (System.currentTimeMillis() - inicio > 6_000) {
+                    instalar.setVisible(true);
+                    instalar.setManaged(true);
+                }
+            }
+        }));
+        vigia.setCycleCount(Timeline.INDEFINITE);
+        vigia.play();
+
+        ded.entrar().whenComplete((r, ex) -> Platform.runLater(() -> {
+            vigia.stop();
+            carregando.setVisible(false);
+            if (ex != null) {
+                erro(status, (ex.getCause() != null ? ex.getCause() : ex).getMessage());
                 return;
             }
             if (r.precisaEscolherEscola()) mostrarEscolas(r.escolas());

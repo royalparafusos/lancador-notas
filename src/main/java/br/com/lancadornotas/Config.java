@@ -65,6 +65,24 @@ public final class Config {
         }
     }
 
+    /** "extensao" (padrão: usa o DED+ aberto no navegador do professor) ou "navegador" (janela própria, modo antigo). */
+    public static String modoDed() {
+        return props.getProperty("ded.modo", "extensao");
+    }
+
+    /** Senha interna entre o programa e a extensão (gerada uma vez neste computador). */
+    public static synchronized String tokenExtensao() {
+        String t = props.getProperty("extensao.token", "");
+        if (t.isBlank()) {
+            byte[] b = new byte[24];
+            new java.security.SecureRandom().nextBytes(b);
+            t = java.util.HexFormat.of().formatHex(b);
+            props.setProperty("extensao.token", t);
+            salvar();
+        }
+        return t;
+    }
+
     public static String avisoReinstalarVisto() {
         return props.getProperty("atualizacao.avisoReinstalar", "");
     }

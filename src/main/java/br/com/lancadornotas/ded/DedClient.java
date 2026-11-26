@@ -35,7 +35,7 @@ import java.util.function.Consumer;
  * O Playwright não é thread-safe: tudo roda numa thread própria; os métodos públicos devolvem
  * CompletableFuture para não travar a tela.
  */
-public class DedClient implements AutoCloseable {
+public class DedClient implements Ded {
 
     private static final int TIMEOUT_MS = 20_000;
 
@@ -88,13 +88,6 @@ public class DedClient implements AutoCloseable {
             Files.writeString(pastaCapturas().resolve(nome + "-ultima.html"), "<!-- " + page.url() + " -->\n" + html);
         } catch (Exception ignored) {}
     }
-
-    public record ResultadoLogin(List<Escola> escolas, String escolaAtual) {
-        public boolean precisaEscolherEscola() { return !escolas.isEmpty(); }
-    }
-
-    /** Resultado do lançamento de UM aluno numa avaliação. */
-    public record ResultadoAluno(boolean ok, String mensagem) {}
 
     // ================================================================== ciclo de vida
 
@@ -376,6 +369,7 @@ public class DedClient implements AutoCloseable {
      * Se a janela do programa já estiver aberta com o DED+ LOGADO, conecta direto nela (sem login).
      * Devolve null se não houver DED+ aberto e logado.
      */
+    @Override
     public CompletableFuture<ResultadoLogin> usarDedJaAberto() {
         return naThread((Login<ResultadoLogin>) () -> {
             ResultadoLogin r = tentarDedAberto();

@@ -48,6 +48,17 @@ O instalador só precisa ser gerado de novo quando as bibliotecas mudarem; o res
 - **Tela azul "O Windows protegeu o computador" (SmartScreen):** aparece porque o instalador não tem assinatura digital. O guia ensina a passar por ela ("Mais informações" → "Executar assim mesmo"). Para eliminar o aviso é preciso um certificado de assinatura de código, que é pago.
 - **Chave da API dentro do instalador:** quem tiver o instalador consegue extrair a chave, e todo uso é cobrado na sua conta. No console da Anthropic, **defina um limite de gasto mensal** e use uma chave só para este programa, que você pode trocar quando quiser.
 
+## Conector do DED+ (extensão do navegador) — modo padrão
+
+O professor usa o DED+ no **próprio navegador**, logado como sempre: Chrome ou Edge, sem janela separada. Uma pequena extensão, o **conector**, faz o trabalho dentro da página já aberta e recebe as ordens do programa por `http://127.0.0.1:47321`, que só funciona dentro do computador e é protegido por um token.
+
+- **Por quê:** o navegador próprio que o programa abria passou a ser marcado como robô pelo Seg.ID. Com o conector, quem entra no DED+ é o navegador do dia a dia, do jeito normal.
+- **Instalação (uma vez por computador):** a tela de login do programa mostra o passo a passo. Abra `chrome://extensions` (no Edge, `edge://extensions`), ligue o **Modo do desenvolvedor**, clique em **Carregar sem compactação**, escolha a pasta `~/.lancador-notas-ded/extensao` e aperte F5 no DED+.
+- **Atualizações:** a cada versão nova, o programa regrava os arquivos do conector, e o conector se recarrega sozinho.
+- **Código:** `src/main/resources/extensao/` (`manifest.json`, `background.js`, `conteudo.js`) e `ded/ConectorExtensao.java` + `ded/DedExtensao.java`.
+- **Modo antigo** (janela própria, Playwright): `ded.modo=navegador` em `~/.lancador-notas-ded/config.properties`.
+- **Testado** de ponta a ponta com um DED+ simulado: listar turmas, abrir turma, ler alunos (pela Visão Geral e pelo plano B), escolher trimestre, lançar, conferir e repetir sem regravar.
+
 ## Atualizações automáticas
 
 Depois de instalado, **o programa se atualiza sozinho**. Não precisa reinstalar a cada mudança.

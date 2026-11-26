@@ -1,6 +1,8 @@
 package br.com.lancadornotas;
 
+import br.com.lancadornotas.ded.Ded;
 import br.com.lancadornotas.ded.DedClient;
+import br.com.lancadornotas.ded.DedExtensao;
 import br.com.lancadornotas.ui.LoginView;
 import br.com.lancadornotas.ui.MainView;
 import javafx.application.Application;
@@ -10,7 +12,7 @@ import javafx.stage.Stage;
 
 public class App extends Application {
 
-    private DedClient ded;
+    private Ded ded;
     private Stage stage;
     private MainView main;
 
@@ -26,17 +28,37 @@ public class App extends Application {
         var icone = getClass().getResourceAsStream("/icone.png");
         if (icone != null) stage.getIcons().add(new javafx.scene.image.Image(icone));
 
-        ded = new DedClient(msg -> Platform.runLater(() -> {
+        java.util.function.Consumer<String> log = msg -> Platform.runLater(() -> {
             if (main != null) main.log(msg); else System.out.println(msg);
-        }));
+        });
+        try {
+            if ("navegador".equals(Config.modoDed())) {
+                ded = new DedClient(log);
+            } else {
+                try {
+                    ded = new DedExtensao(log);
+                } catch (LinkageError falta) {
+                    // segurança: se faltar algum componente do Java para o conector, usa o modo antigo
+                    // (o programa continua abrindo e recebendo atualizações)
+                    System.err.println("Conector indisponível (" + falta + "); usando o modo navegador.");
+                    ded = new DedClient(log);
+                }
+            }
+        } catch (Exception e) {
+            javafx.scene.control.Alert a = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR, e.getMessage());
+            a.setHeaderText("Não foi possível iniciar o Lançador de Notas");
+            a.showAndWait();
+            Platform.exit();
+            return;
+        }
 
-        LoginView login = new LoginView(ded, this::abrirPrincipal);
-        Scene cenaLogin = new Scene(login.getRoot(), 470, 580);
+        LoginView login = new LoginView(ded, getHostServices(), this::abrirPrincipal);
+        Scene cenaLogin = new Scene(login.getRoot(), 500, 700);
         cenaLogin.getStylesheets().add(getClass().getResource("/estilo.css").toExternalForm());
         stage.setScene(cenaLogin);
         stage.setResizable(true);          // janela normal do Windows: minimizar, maximizar, fechar
-        stage.setMinWidth(440);
-        stage.setMinHeight(560);
+        stage.setMinWidth(460);
+        stage.setMinHeight(600);
         stage.centerOnScreen();
         stage.show();
         procurarAtualizacao();
